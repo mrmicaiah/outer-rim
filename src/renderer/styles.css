@@ -25,6 +25,7 @@
   --pane-nav-height: 32px;
   --bottom-panel-height: 200px;
   --bottom-header-height: 28px;
+  --pane-gap: 12px;
   --transition: 150ms ease;
 }
 
@@ -118,6 +119,10 @@ body {
   flex: 1;
   display: flex;
   overflow: hidden;
+  gap: var(--pane-gap);
+  padding: var(--pane-gap);
+  padding-right: 0;
+  background: var(--bg-primary);
 }
 
 .pane {
@@ -125,22 +130,24 @@ body {
   display: flex;
   flex-direction: column;
   min-width: 200px;
-  background: var(--bg-primary);
-}
-
-#left-pane {
-  border-right: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
 }
 
 #pane-resizer {
-  width: 6px;
-  background: var(--border-color);
+  width: 8px;
+  background: transparent;
   cursor: col-resize;
   transition: background var(--transition);
+  margin: 0 -4px;
+  z-index: 10;
 }
 
 #pane-resizer:hover {
   background: var(--accent);
+  border-radius: 4px;
 }
 
 /* ============================================
@@ -341,14 +348,15 @@ body {
    ============================================ */
 
 #notepad-resizer {
-  width: 6px;
-  background: var(--border-color);
+  width: 8px;
+  background: transparent;
   cursor: col-resize;
   transition: background var(--transition);
 }
 
 #notepad-resizer:hover {
   background: var(--accent);
+  border-radius: 4px;
 }
 
 #notepad-panel {
@@ -357,13 +365,18 @@ body {
   border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
+  margin-right: var(--pane-gap);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
 }
 
 #notepad-panel.collapsed {
   width: 0;
   min-width: 0;
   overflow: hidden;
-  border-left: none;
+  border: none;
+  margin-right: 0;
 }
 
 .notepad-header {
