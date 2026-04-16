@@ -1,6 +1,6 @@
 // ============================================
 // OUTER RIM - Renderer Application
-// Dual-Pane Architecture
+// Dual-Pane + Bottom Workspace Bar
 // ============================================
 
 // Browser-native UUID generator
@@ -11,7 +11,7 @@ function uuidv4() {
 // State
 let workspaces = [];
 let activeWorkspace = null;
-let activePane = 'left'; // Which pane the next tab will open in
+let activePane = 'left';
 
 // DOM Elements
 const workspaceList = document.getElementById('workspace-list');
@@ -151,7 +151,6 @@ function renderPane(paneName) {
   const tabList = document.querySelector(`.pane-tab-list[data-pane="${paneName}"]`);
   const webviewContainer = document.querySelector(`.pane-webview-container[data-pane="${paneName}"]`);
   
-  // Clear existing
   tabList.innerHTML = '';
   webviewContainer.querySelectorAll('webview').forEach(wv => wv.remove());
   
@@ -173,11 +172,9 @@ function renderPane(paneName) {
   
   const pane = activeWorkspace.panes[paneName];
   
-  // Show/hide empty state
   const emptyState = webviewContainer.querySelector('.pane-empty-state');
   emptyState.style.display = pane.tabs.length === 0 ? 'block' : 'none';
   
-  // Render tabs
   pane.tabs.forEach(tab => {
     // Tab item
     const item = document.createElement('div');
@@ -206,11 +203,14 @@ function renderPane(paneName) {
     
     tabList.appendChild(item);
     
-    // Webview
+    // Webview with session persistence
     const webview = document.createElement('webview');
     webview.id = `webview-${paneName}-${tab.id}`;
     webview.src = tab.url;
     webview.className = pane.activeTabId === tab.id ? 'active' : '';
+    
+    // Enable session persistence - this keeps you logged in!
+    webview.setAttribute('partition', 'persist:outerrim');
     
     webview.addEventListener('page-title-updated', (e) => {
       updateTabTitle(paneName, tab.id, e.title);
@@ -233,7 +233,6 @@ function renderPane(paneName) {
 async function createTab(paneName, url) {
   if (!activeWorkspace) return;
   
-  // Ensure URL has protocol
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
     if (url.includes('.') && !url.includes(' ')) {
       url = 'https://' + url;
@@ -269,13 +268,11 @@ async function switchTab(paneName, tabId) {
   const idx = workspaces.findIndex(w => w.id === activeWorkspace.id);
   workspaces[idx] = activeWorkspace;
   
-  // Update tab UI
   const tabList = document.querySelector(`.pane-tab-list[data-pane="${paneName}"]`);
   tabList.querySelectorAll('.pane-tab-item').forEach(item => {
     item.classList.toggle('active', item.dataset.id === tabId);
   });
   
-  // Update webview visibility
   const container = document.querySelector(`.pane-webview-container[data-pane="${paneName}"]`);
   container.querySelectorAll('webview').forEach(wv => {
     wv.classList.toggle('active', wv.id === `webview-${paneName}-${tabId}`);
@@ -495,7 +492,7 @@ function setupEventListeners() {
     const panel = document.getElementById('notepad-panel');
     const btn = document.getElementById('notepad-toggle');
     panel.classList.toggle('collapsed');
-    btn.textContent = panel.classList.contains('collapsed') ? '▲' : '▼';
+    btn.textContent = panel.classList.contains('collapsed') ? '▶' : '◀';
   });
   
   // Pane resizer
@@ -520,7 +517,6 @@ function setupEventListeners() {
       e.preventDefault();
       openCreateWorkspaceModal();
     }
-    // Switch pane focus with Cmd+1 and Cmd+2
     if ((e.metaKey || e.ctrlKey) && e.key === '1') {
       e.preventDefault();
       activePane = 'left';
@@ -552,10 +548,11 @@ function setupPaneResizer() {
     
     const container = document.getElementById('dual-pane-container');
     const containerRect = container.getBoundingClientRect();
+    const notepadWidth = document.getElementById('notepad-panel').offsetWidth;
+    const availableWidth = containerRect.width - notepadWidth - 12; // minus resizers
     const newLeftWidth = e.clientX - containerRect.left;
-    const totalWidth = containerRect.width - 6; // minus resizer width
     
-    const leftPercent = (newLeftWidth / totalWidth) * 100;
+    const leftPercent = (newLeftWidth / availableWidth) * 100;
     
     if (leftPercent > 20 && leftPercent < 80) {
       leftPane.style.flex = `0 0 ${leftPercent}%`;
@@ -570,24 +567,24 @@ function setupPaneResizer() {
 }
 
 function setupNotepadResizer() {
-  const resizer = document.getElementById('notepad-resizer-horizontal');
+  const resizer = document.getElementById('notepad-resizer');
   const panel = document.getElementById('notepad-panel');
   let isResizing = false;
   
   resizer.addEventListener('mousedown', () => {
     isResizing = true;
-    document.body.style.cursor = 'row-resize';
+    document.body.style.cursor = 'col-resize';
   });
   
   document.addEventListener('mousemove', (e) => {
     if (!isResizing) return;
     
-    const mainContent = document.getElementById('main-content');
-    const mainRect = mainContent.getBoundingClientRect();
-    const newHeight = mainRect.bottom - e.clientY;
+    const container = document.getElementById('dual-pane-container');
+    const containerRect = container.getBoundingClientRect();
+    const newWidth = containerRect.right - e.clientX;
     
-    if (newHeight > 50 && newHeight < 400) {
-      panel.style.height = newHeight + 'px';
+    if (newWidth > 150 && newWidth < 500) {
+      panel.style.width = newWidth + 'px';
     }
   });
   

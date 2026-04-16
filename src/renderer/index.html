@@ -9,18 +9,6 @@
 </head>
 <body>
   <div id="app">
-    <!-- Sidebar: Workspace Switcher -->
-    <aside id="workspace-sidebar">
-      <div class="sidebar-header">
-        <span class="logo">◐</span>
-        <span class="logo-text">Outer Rim</span>
-      </div>
-      <div id="workspace-list"></div>
-      <button id="add-workspace" class="sidebar-btn" title="New Workspace">
-        <span>+</span>
-      </button>
-    </aside>
-
     <!-- Main Content Area -->
     <main id="main-content">
       <!-- Dual Pane Container -->
@@ -55,17 +43,25 @@
           </div>
         </div>
 
+        <!-- NOTEPAD RESIZER (VERTICAL) -->
+        <div id="notepad-resizer"></div>
+
+        <!-- NOTEPAD PANEL (RIGHT SIDE) -->
+        <aside id="notepad-panel">
+          <div class="notepad-header">
+            <span class="notepad-title">📝 Notes</span>
+            <button id="notepad-toggle" title="Toggle Notepad">◀</button>
+          </div>
+          <textarea id="notepad-content" placeholder="Write your notes here...&#10;&#10;These notes are saved per workspace and persist across sessions."></textarea>
+        </aside>
+
       </div>
 
-      <!-- Notepad Panel (Bottom) -->
-      <div id="notepad-resizer-horizontal"></div>
-      <aside id="notepad-panel">
-        <div class="notepad-header">
-          <span class="notepad-title">📝 Workspace Notes</span>
-          <button id="notepad-toggle" title="Toggle Notepad">▼</button>
-        </div>
-        <textarea id="notepad-content" placeholder="Write your notes here...&#10;&#10;These notes are saved per workspace and persist across sessions."></textarea>
-      </aside>
+      <!-- WORKSPACE BAR (BOTTOM) -->
+      <footer id="workspace-bar">
+        <div id="workspace-list"></div>
+        <button id="add-workspace" class="workspace-add-btn" title="New Workspace">+ New Workspace</button>
+      </footer>
     </main>
   </div>
 
@@ -98,6 +94,7 @@
         <button class="quick-link" data-url="https://claude.ai/new">Claude Chat</button>
         <button class="quick-link" data-url="https://github.com">GitHub</button>
         <button class="quick-link" data-url="https://docs.google.com">Google Docs</button>
+        <button class="quick-link" data-url="https://chat.openai.com">ChatGPT</button>
       </div>
       <div class="modal-actions">
         <button id="tab-modal-cancel" class="btn-secondary">Cancel</button>

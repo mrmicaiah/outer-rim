@@ -1,6 +1,6 @@
 /* ============================================
    OUTER RIM - Dark Theme Styles
-   Dual-Pane Layout
+   Dual-Pane + Bottom Workspace Bar
    ============================================ */
 
 :root {
@@ -17,8 +17,8 @@
   --accent-dim: #4a3a8a;
   --danger: #e55561;
   --success: #6bbd6e;
-  --sidebar-width: 200px;
-  --notepad-height: 150px;
+  --notepad-width: 280px;
+  --workspace-bar-height: 42px;
   --pane-tab-height: 36px;
   --transition: 150ms ease;
 }
@@ -40,123 +40,6 @@ body {
 #app {
   display: flex;
   height: 100vh;
-}
-
-/* ============================================
-   WORKSPACE SIDEBAR
-   ============================================ */
-
-#workspace-sidebar {
-  width: var(--sidebar-width);
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border-color);
-  display: flex;
-  flex-direction: column;
-  -webkit-app-region: drag;
-}
-
-.sidebar-header {
-  padding: 20px 16px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.logo {
-  font-size: 24px;
-  color: var(--accent);
-}
-
-.logo-text {
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--text-primary);
-}
-
-#workspace-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px;
-  -webkit-app-region: no-drag;
-}
-
-.workspace-item {
-  padding: 10px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-  transition: background var(--transition);
-}
-
-.workspace-item:hover {
-  background: var(--bg-hover);
-}
-
-.workspace-item.active {
-  background: var(--accent-dim);
-}
-
-.workspace-item.active .workspace-name {
-  color: var(--text-primary);
-}
-
-.workspace-name {
-  font-size: 13px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.workspace-actions {
-  display: none;
-  gap: 4px;
-}
-
-.workspace-item:hover .workspace-actions {
-  display: flex;
-}
-
-.workspace-action-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 12px;
-}
-
-.workspace-action-btn:hover {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.workspace-action-btn.delete:hover {
-  color: var(--danger);
-}
-
-.sidebar-btn {
-  margin: 8px;
-  padding: 10px;
-  background: var(--bg-tertiary);
-  border: 1px dashed var(--border-color);
-  border-radius: 8px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 18px;
-  transition: all var(--transition);
-  -webkit-app-region: no-drag;
-}
-
-.sidebar-btn:hover {
-  background: var(--bg-hover);
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 /* ============================================
@@ -214,6 +97,11 @@ body {
   display: flex;
   align-items: center;
   padding: 0 4px;
+  -webkit-app-region: drag;
+}
+
+#left-pane .pane-tab-bar {
+  padding-left: 80px; /* Space for Mac traffic lights */
 }
 
 .pane-tab-list {
@@ -221,6 +109,7 @@ body {
   flex: 1;
   overflow-x: auto;
   gap: 2px;
+  -webkit-app-region: no-drag;
 }
 
 .pane-tab-list::-webkit-scrollbar {
@@ -230,13 +119,14 @@ body {
 .pane-tab-item {
   display: flex;
   align-items: center;
-  padding: 4px 10px;
+  padding: 4px 8px;
   background: var(--bg-tertiary);
   border-radius: 4px 4px 0 0;
   cursor: pointer;
   max-width: 160px;
-  min-width: 80px;
+  min-width: 60px;
   transition: background var(--transition);
+  -webkit-app-region: no-drag;
 }
 
 .pane-tab-item:hover {
@@ -252,6 +142,7 @@ body {
   height: 14px;
   margin-right: 6px;
   border-radius: 2px;
+  flex-shrink: 0;
 }
 
 .pane-tab-title {
@@ -278,6 +169,7 @@ body {
   font-size: 12px;
   opacity: 0;
   transition: opacity var(--transition);
+  flex-shrink: 0;
 }
 
 .pane-tab-item:hover .pane-tab-close {
@@ -297,6 +189,7 @@ body {
   padding: 4px 10px;
   font-size: 16px;
   border-radius: 4px;
+  -webkit-app-region: no-drag;
 }
 
 .pane-add-tab:hover {
@@ -341,36 +234,40 @@ body {
 }
 
 /* ============================================
-   NOTEPAD PANEL (BOTTOM)
+   NOTEPAD PANEL (RIGHT SIDE)
    ============================================ */
 
-#notepad-resizer-horizontal {
-  height: 6px;
+#notepad-resizer {
+  width: 6px;
   background: var(--border-color);
-  cursor: row-resize;
+  cursor: col-resize;
   transition: background var(--transition);
 }
 
-#notepad-resizer-horizontal:hover {
+#notepad-resizer:hover {
   background: var(--accent);
 }
 
 #notepad-panel {
-  height: var(--notepad-height);
+  width: var(--notepad-width);
   background: var(--bg-secondary);
-  border-top: 1px solid var(--border-color);
+  border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  transition: height var(--transition);
+  transition: width var(--transition);
 }
 
 #notepad-panel.collapsed {
-  height: 36px;
+  width: 0;
   overflow: hidden;
 }
 
+#notepad-panel.collapsed + #notepad-resizer {
+  display: none;
+}
+
 .notepad-header {
-  padding: 8px 16px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
@@ -401,7 +298,7 @@ body {
 
 #notepad-content {
   flex: 1;
-  padding: 12px 16px;
+  padding: 12px;
   background: transparent;
   border: none;
   color: var(--text-primary);
@@ -417,15 +314,115 @@ body {
 }
 
 /* ============================================
+   WORKSPACE BAR (BOTTOM)
+   ============================================ */
+
+#workspace-bar {
+  height: var(--workspace-bar-height);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 8px;
+}
+
+#workspace-list {
+  display: flex;
+  flex: 1;
+  overflow-x: auto;
+  gap: 4px;
+}
+
+#workspace-list::-webkit-scrollbar {
+  display: none;
+}
+
+.workspace-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.workspace-item:hover {
+  background: var(--bg-hover);
+}
+
+.workspace-item.active {
+  background: var(--accent-dim);
+}
+
+.workspace-item.active .workspace-name {
+  color: var(--text-primary);
+}
+
+.workspace-name {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-right: 8px;
+}
+
+.workspace-actions {
+  display: none;
+  gap: 2px;
+}
+
+.workspace-item:hover .workspace-actions {
+  display: flex;
+}
+
+.workspace-action-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.workspace-action-btn:hover {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.workspace-action-btn.delete:hover {
+  color: var(--danger);
+}
+
+.workspace-add-btn {
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.workspace-add-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ============================================
    EMPTY STATE OVERLAY
    ============================================ */
 
 #empty-state-overlay {
   position: fixed;
   top: 0;
-  left: var(--sidebar-width);
+  left: 0;
   right: 0;
-  bottom: 0;
+  bottom: var(--workspace-bar-height);
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
