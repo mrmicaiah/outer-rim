@@ -1,36 +1,46 @@
-const fs = require('fs');
-const path = require('path');
 const { app } = require('electron');
+const path = require('path');
+const fs = require('fs');
 
 class Store {
-  constructor(opts) {
-    // Get user data path from Electron
+  constructor() {
+    // Get the user data path from Electron
     const userDataPath = app.getPath('userData');
-    this.path = path.join(userDataPath, opts.configName + '.json');
-    this.data = parseDataFile(this.path, opts.defaults);
+    this.path = path.join(userDataPath, 'outer-rim-data.json');
+    this.data = this.parseDataFile();
   }
-  
+
+  parseDataFile() {
+    try {
+      if (fs.existsSync(this.path)) {
+        return JSON.parse(fs.readFileSync(this.path, 'utf8'));
+      }
+    } catch (error) {
+      console.error('Error reading store:', error);
+    }
+    return {};
+  }
+
   get(key) {
     return this.data[key];
   }
-  
+
   set(key, val) {
     this.data[key] = val;
-    fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2));
+    try {
+      fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2));
+    } catch (error) {
+      console.error('Error writing store:', error);
+    }
   }
-  
-  getAll() {
-    return this.data;
-  }
-}
 
-function parseDataFile(filePath, defaults) {
-  try {
-    const data = fs.readFileSync(filePath);
-    return JSON.parse(data);
-  } catch(error) {
-    // If file doesn't exist or is corrupted, return defaults
-    return defaults;
+  delete(key) {
+    delete this.data[key];
+    try {
+      fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2));
+    } catch (error) {
+      console.error('Error writing store:', error);
+    }
   }
 }
 
