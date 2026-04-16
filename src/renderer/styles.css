@@ -17,6 +17,7 @@
   --accent-dim: #4a3a8a;
   --danger: #e55561;
   --success: #6bbd6e;
+  --title-bar-height: 32px;
   --notepad-width: 280px;
   --workspace-bar-height: 42px;
   --pane-tab-height: 36px;
@@ -39,7 +40,50 @@ body {
 
 #app {
   display: flex;
+  flex-direction: column;
   height: 100vh;
+}
+
+/* ============================================
+   DRAGGABLE TITLE BAR
+   ============================================ */
+
+#title-bar {
+  height: var(--title-bar-height);
+  background: #c0392b; /* Red so you can see it - change later */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+}
+
+.title-bar-drag-region {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  -webkit-app-region: drag;
+}
+
+.title-bar-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: white;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+/* Traffic light spacing for Mac */
+#title-bar::before {
+  content: '';
+  width: 70px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
 }
 
 /* ============================================
@@ -51,6 +95,8 @@ body {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  position: relative;
 }
 
 /* ============================================
@@ -96,12 +142,7 @@ body {
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
-  padding: 0 4px;
-  -webkit-app-region: drag;
-}
-
-#left-pane .pane-tab-bar {
-  padding-left: 80px; /* Space for Mac traffic lights */
+  padding: 0 8px;
 }
 
 .pane-tab-list {
@@ -109,7 +150,6 @@ body {
   flex: 1;
   overflow-x: auto;
   gap: 2px;
-  -webkit-app-region: no-drag;
 }
 
 .pane-tab-list::-webkit-scrollbar {
@@ -126,7 +166,6 @@ body {
   max-width: 160px;
   min-width: 60px;
   transition: background var(--transition);
-  -webkit-app-region: no-drag;
 }
 
 .pane-tab-item:hover {
@@ -189,7 +228,6 @@ body {
   padding: 4px 10px;
   font-size: 16px;
   border-radius: 4px;
-  -webkit-app-region: no-drag;
 }
 
 .pane-add-tab:hover {
@@ -259,10 +297,12 @@ body {
 
 #notepad-panel.collapsed {
   width: 0;
+  min-width: 0;
   overflow: hidden;
+  border-left: none;
 }
 
-#notepad-panel.collapsed + #notepad-resizer {
+#notepad-panel.collapsed ~ #notepad-resizer {
   display: none;
 }
 
@@ -313,6 +353,37 @@ body {
   color: var(--text-muted);
 }
 
+/* Expand button when notepad is collapsed */
+#notepad-expand {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+  z-index: 10;
+}
+
+#notepad-expand:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+#notepad-expand.hidden {
+  display: none;
+}
+
 /* ============================================
    WORKSPACE BAR (BOTTOM)
    ============================================ */
@@ -325,6 +396,7 @@ body {
   align-items: center;
   padding: 0 12px;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 #workspace-list {
@@ -419,7 +491,7 @@ body {
 
 #empty-state-overlay {
   position: fixed;
-  top: 0;
+  top: var(--title-bar-height);
   left: 0;
   right: 0;
   bottom: var(--workspace-bar-height);

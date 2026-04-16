@@ -17,6 +17,9 @@ let activePane = 'left';
 const workspaceList = document.getElementById('workspace-list');
 const notepadContent = document.getElementById('notepad-content');
 const emptyStateOverlay = document.getElementById('empty-state-overlay');
+const notepadPanel = document.getElementById('notepad-panel');
+const notepadExpand = document.getElementById('notepad-expand');
+const notepadToggle = document.getElementById('notepad-toggle');
 
 // Modals
 const modalOverlay = document.getElementById('modal-overlay');
@@ -347,6 +350,18 @@ async function saveNotes() {
   }, 500);
 }
 
+function toggleNotepad() {
+  const isCollapsed = notepadPanel.classList.toggle('collapsed');
+  notepadToggle.textContent = isCollapsed ? '▶' : '◀';
+  notepadExpand.classList.toggle('hidden', !isCollapsed);
+}
+
+function expandNotepad() {
+  notepadPanel.classList.remove('collapsed');
+  notepadToggle.textContent = '◀';
+  notepadExpand.classList.add('hidden');
+}
+
 // ============================================
 // UI HELPERS
 // ============================================
@@ -487,13 +502,11 @@ function setupEventListeners() {
   // Notepad
   notepadContent.addEventListener('input', saveNotes);
   
-  // Notepad toggle
-  document.getElementById('notepad-toggle').addEventListener('click', () => {
-    const panel = document.getElementById('notepad-panel');
-    const btn = document.getElementById('notepad-toggle');
-    panel.classList.toggle('collapsed');
-    btn.textContent = panel.classList.contains('collapsed') ? '▶' : '◀';
-  });
+  // Notepad toggle (collapse)
+  notepadToggle.addEventListener('click', toggleNotepad);
+  
+  // Notepad expand button (when collapsed)
+  notepadExpand.addEventListener('click', expandNotepad);
   
   // Pane resizer
   setupPaneResizer();
@@ -548,7 +561,7 @@ function setupPaneResizer() {
     
     const container = document.getElementById('dual-pane-container');
     const containerRect = container.getBoundingClientRect();
-    const notepadWidth = document.getElementById('notepad-panel').offsetWidth;
+    const notepadWidth = notepadPanel.classList.contains('collapsed') ? 0 : notepadPanel.offsetWidth;
     const availableWidth = containerRect.width - notepadWidth - 12; // minus resizers
     const newLeftWidth = e.clientX - containerRect.left;
     
@@ -568,7 +581,6 @@ function setupPaneResizer() {
 
 function setupNotepadResizer() {
   const resizer = document.getElementById('notepad-resizer');
-  const panel = document.getElementById('notepad-panel');
   let isResizing = false;
   
   resizer.addEventListener('mousedown', () => {
@@ -584,7 +596,7 @@ function setupNotepadResizer() {
     const newWidth = containerRect.right - e.clientX;
     
     if (newWidth > 150 && newWidth < 500) {
-      panel.style.width = newWidth + 'px';
+      notepadPanel.style.width = newWidth + 'px';
     }
   });
   

@@ -9,6 +9,12 @@
 </head>
 <body>
   <div id="app">
+    <!-- DRAGGABLE TITLE BAR -->
+    <header id="title-bar">
+      <div class="title-bar-drag-region"></div>
+      <span class="title-bar-text">Outer Rim</span>
+    </header>
+
     <!-- Main Content Area -->
     <main id="main-content">
       <!-- Dual Pane Container -->
@@ -56,6 +62,9 @@
         </aside>
 
       </div>
+
+      <!-- NOTEPAD EXPAND BUTTON (visible when collapsed) -->
+      <button id="notepad-expand" class="hidden" title="Show Notes">📝</button>
 
       <!-- WORKSPACE BAR (BOTTOM) -->
       <footer id="workspace-bar">
