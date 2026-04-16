@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, nativeImage, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, nativeImage, clipboard, Menu } = require('electron');
 const path = require('path');
 const Store = require('./store');
 const fs = require('fs');
@@ -25,6 +25,7 @@ function createWindow() {
       webviewTag: true,
       nodeIntegration: false,
       contextIsolation: true,
+      spellcheck: true,
     },
   });
 
@@ -36,6 +37,81 @@ function createWindow() {
   
   // Watch for new screenshots
   watchScreenshots();
+}
+
+// Create application menu with Edit menu for copy/paste
+function createAppMenu() {
+  const template = [
+    {
+      label: 'Outer Rim',
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'pasteAndMatchStyle' },
+        { role: 'delete' },
+        { role: 'selectAll' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        {
+          label: 'Toggle Webview DevTools',
+          accelerator: 'F12',
+          click: () => {
+            mainWindow.webContents.send('menu:toggleDevTools');
+          }
+        },
+        {
+          label: 'Toggle App DevTools',
+          accelerator: 'Alt+CmdOrCtrl+I',
+          click: () => {
+            mainWindow.webContents.toggleDevTools();
+          }
+        },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { type: 'separator' },
+        { role: 'front' },
+        { type: 'separator' },
+        { role: 'window' }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
 }
 
 // Watch screenshots folder for changes
@@ -61,6 +137,7 @@ function watchScreenshots() {
 }
 
 app.whenReady().then(() => {
+  createAppMenu();
   createWindow();
 
   app.on('activate', () => {
@@ -148,7 +225,6 @@ ipcMain.handle('notes:update', (event, workspaceId, notes) => {
 
 ipcMain.handle('screenshots:list', async () => {
   try {
-    // Make sure folder exists
     if (!fs.existsSync(SCREENSHOTS_PATH)) {
       fs.mkdirSync(SCREENSHOTS_PATH, { recursive: true });
       return [];
@@ -171,7 +247,6 @@ ipcMain.handle('screenshots:list', async () => {
         })
     );
     
-    // Sort by most recent first
     screenshots.sort((a, b) => b.mtime - a.mtime);
     
     return screenshots;
