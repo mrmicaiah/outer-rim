@@ -1,6 +1,6 @@
 // ============================================
 // OUTER RIM - Renderer Application
-// Dual-Pane + Navigation + Three-Column Bottom Panel
+// With Screenshots Panel
 // ============================================
 
 function uuidv4() {
@@ -11,7 +11,6 @@ function uuidv4() {
 let workspaces = [];
 let activeWorkspace = null;
 let activePane = 'left';
-let currentFilesPath = '~';
 let scratchpadContent = '';
 
 // DOM Elements
@@ -51,8 +50,14 @@ async function init() {
   updateEmptyState();
   setupEventListeners();
   
-  // Initial file load
-  loadFiles(currentFilesPath);
+  // Load screenshots
+  loadScreenshots();
+  
+  // Listen for new screenshots
+  window.outerRim.screenshots.onNew((filename) => {
+    console.log('New screenshot:', filename);
+    loadScreenshots();
+  });
 }
 
 // ============================================
@@ -136,8 +141,8 @@ function renderWorkspaces() {
     item.innerHTML = `
       <span class="workspace-name">${escapeHtml(workspace.name)}</span>
       <div class="workspace-actions">
-        <button class="workspace-action-btn edit" title="Rename">\u270e</button>
-        <button class="workspace-action-btn delete" title="Delete">\u00d7</button>
+        <button class="workspace-action-btn edit" title="Rename">✎</button>
+        <button class="workspace-action-btn delete" title="Delete">×</button>
       </div>
     `;
     
@@ -268,7 +273,7 @@ function renderPane(paneName) {
     item.innerHTML = `
       <img class="pane-tab-favicon" src="${favicon}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><rect fill=%22%23666%22 width=%2216%22 height=%2216%22 rx=%222%22/></svg>'">
       <span class="pane-tab-title" title="${escapeHtml(tab.title || '')}">${escapeHtml(displayTitle)}</span>
-      <button class="pane-tab-close" title="Close tab">\u00d7</button>
+      <button class="pane-tab-close" title="Close tab">×</button>
     `;
     
     item.addEventListener('click', (e) => {
@@ -524,13 +529,13 @@ async function saveNotes() {
 
 function toggleNotepad() {
   const isCollapsed = notepadPanel.classList.toggle('collapsed');
-  notepadToggle.textContent = isCollapsed ? '\u25b6' : '\u25c0';
+  notepadToggle.textContent = isCollapsed ? '▶' : '◀';
   notepadExpand.classList.toggle('hidden', !isCollapsed);
 }
 
 function expandNotepad() {
   notepadPanel.classList.remove('collapsed');
-  notepadToggle.textContent = '\u25c0';
+  notepadToggle.textContent = '◀';
   notepadExpand.classList.add('hidden');
 }
 
@@ -540,102 +545,98 @@ function expandNotepad() {
 
 function toggleBottomPanel() {
   const isCollapsed = bottomPanel.classList.toggle('collapsed');
-  document.getElementById('bottom-panel-toggle').textContent = isCollapsed ? '\u25b2' : '\u25bc';
+  document.getElementById('bottom-panel-toggle').textContent = isCollapsed ? '▲' : '▼';
 }
 
 // ============================================
-// FILES PANEL
+// SCREENSHOTS PANEL
 // ============================================
 
-async function loadFiles(path) {
-  currentFilesPath = path;
-  document.getElementById('files-path').value = path;
-  
-  const filesList = document.getElementById('files-list');
-  filesList.innerHTML = '<div class="file-item"><span class="file-icon">\u23f3</span><span class="file-name">Loading...</span></div>';
+async function loadScreenshots() {
+  const list = document.getElementById('screenshots-list');
+  list.innerHTML = '<div class="screenshots-empty">Loading...</div>';
   
   try {
-    const files = await window.outerRim.files.list(path);
-    renderFiles(files);
+    const screenshots = await window.outerRim.screenshots.list();
+    renderScreenshots(screenshots);
   } catch (err) {
-    filesList.innerHTML = `<div class="file-item"><span class="file-icon">\u274c</span><span class="file-name">Error: ${err.message}</span></div>`;
+    list.innerHTML = `<div class="screenshots-empty">Error: ${err.message}</div>`;
   }
 }
 
-function renderFiles(files) {
-  const filesList = document.getElementById('files-list');
-  filesList.innerHTML = '';
+function renderScreenshots(screenshots) {
+  const list = document.getElementById('screenshots-list');
+  list.innerHTML = '';
   
-  if (files.length === 0) {
-    filesList.innerHTML = '<div class="file-item"><span class="file-icon">\ud83d\udced</span><span class="file-name">Empty directory</span></div>';
+  if (screenshots.length === 0) {
+    list.innerHTML = '<div class="screenshots-empty">No screenshots yet. Press Cmd+Shift+4 to capture!</div>';
     return;
   }
   
-  // Sort: directories first, then files
-  files.sort((a, b) => {
-    if (a.isDirectory && !b.isDirectory) return -1;
-    if (!a.isDirectory && b.isDirectory) return 1;
-    return a.name.localeCompare(b.name);
-  });
-  
-  files.forEach(file => {
+  screenshots.forEach(screenshot => {
     const item = document.createElement('div');
-    item.className = `file-item ${file.isDirectory ? 'directory' : ''}`;
+    item.className = 'screenshot-item';
+    item.draggable = true;
     
-    const icon = file.isDirectory ? '\ud83d\udcc1' : getFileIcon(file.name);
-    const size = file.isDirectory ? '' : formatFileSize(file.size);
+    const timeAgo = getTimeAgo(screenshot.mtime);
     
     item.innerHTML = `
-      <span class="file-icon">${icon}</span>
-      <span class="file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
-      <span class="file-size">${size}</span>
+      <img src="file://${screenshot.path}" alt="${escapeHtml(screenshot.name)}" loading="lazy">
+      <div class="screenshot-name" title="${escapeHtml(screenshot.name)}">${escapeHtml(screenshot.name)}</div>
+      <div class="screenshot-time">${timeAgo}</div>
     `;
     
     item.addEventListener('click', () => {
-      if (file.isDirectory) {
-        const newPath = currentFilesPath === '~' 
-          ? `~/${file.name}`
-          : `${currentFilesPath}/${file.name}`;
-        loadFiles(newPath);
-      }
+      openScreenshotPreview(screenshot.path);
     });
     
-    filesList.appendChild(item);
+    // Enable drag to other apps
+    item.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/uri-list', `file://${screenshot.path}`);
+      e.dataTransfer.setData('text/plain', screenshot.path);
+    });
+    
+    list.appendChild(item);
   });
 }
 
-function getFileIcon(filename) {
-  const ext = filename.split('.').pop().toLowerCase();
-  const icons = {
-    js: '\ud83d\udcdc', ts: '\ud83d\udcdc', jsx: '\u269b\ufe0f', tsx: '\u269b\ufe0f',
-    html: '\ud83c\udf10', css: '\ud83c\udfa8', scss: '\ud83c\udfa8',
-    json: '\ud83d\udccb', md: '\ud83d\udcdd', txt: '\ud83d\udcc4',
-    py: '\ud83d\udc0d', rb: '\ud83d\udc8e', go: '\ud83d\udd37',
-    jpg: '\ud83d\uddbc\ufe0f', jpeg: '\ud83d\uddbc\ufe0f', png: '\ud83d\uddbc\ufe0f', gif: '\ud83d\uddbc\ufe0f', svg: '\ud83d\uddbc\ufe0f',
-    pdf: '\ud83d\udcd5', doc: '\ud83d\udcd8', docx: '\ud83d\udcd8',
-    zip: '\ud83d\udce6', tar: '\ud83d\udce6', gz: '\ud83d\udce6',
-    mp3: '\ud83c\udfb5', wav: '\ud83c\udfb5', mp4: '\ud83c\udfac', mov: '\ud83c\udfac',
-    sh: '\u2699\ufe0f', bash: '\u2699\ufe0f', zsh: '\u2699\ufe0f',
-  };
-  return icons[ext] || '\ud83d\udcc4';
-}
-
-function formatFileSize(bytes) {
-  if (bytes === 0) return '0 B';
-  if (!bytes) return '';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
-function navigateFilesUp() {
-  if (currentFilesPath === '~' || currentFilesPath === '/') return;
+function getTimeAgo(timestamp) {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
   
-  const parts = currentFilesPath.split('/');
-  parts.pop();
-  const newPath = parts.join('/') || '~';
-  loadFiles(newPath);
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+  
+  return new Date(timestamp).toLocaleDateString();
+}
+
+function openScreenshotPreview(filepath) {
+  const overlay = document.getElementById('screenshot-preview-overlay');
+  const img = document.getElementById('screenshot-preview-img');
+  
+  img.src = `file://${filepath}`;
+  img.dataset.path = filepath;
+  overlay.classList.remove('hidden');
+}
+
+function closeScreenshotPreview() {
+  document.getElementById('screenshot-preview-overlay').classList.add('hidden');
+}
+
+async function copyScreenshotToClipboard() {
+  const img = document.getElementById('screenshot-preview-img');
+  const filepath = img.dataset.path;
+  
+  const success = await window.outerRim.screenshots.copy(filepath);
+  if (success) {
+    // Brief visual feedback
+    const btn = document.getElementById('screenshot-copy');
+    btn.textContent = 'Copied!';
+    setTimeout(() => {
+      btn.textContent = 'Copy to Clipboard';
+    }, 1500);
+  }
 }
 
 // ============================================
@@ -822,15 +823,17 @@ function setupEventListeners() {
   // Bottom panel toggle
   document.getElementById('bottom-panel-toggle').addEventListener('click', toggleBottomPanel);
   
-  // Files panel
-  document.getElementById('files-path').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-      loadFiles(e.target.value.trim());
+  // Screenshots panel
+  document.getElementById('screenshots-refresh').addEventListener('click', loadScreenshots);
+  
+  // Screenshot preview
+  document.getElementById('screenshot-preview-overlay').addEventListener('click', (e) => {
+    if (e.target.id === 'screenshot-preview-overlay') {
+      closeScreenshotPreview();
     }
   });
-  
-  document.getElementById('files-up').addEventListener('click', navigateFilesUp);
-  document.getElementById('files-refresh').addEventListener('click', () => loadFiles(currentFilesPath));
+  document.getElementById('screenshot-copy').addEventListener('click', copyScreenshotToClipboard);
+  document.getElementById('screenshot-close').addEventListener('click', closeScreenshotPreview);
   
   // Terminal panel
   document.getElementById('terminal-input').addEventListener('keydown', (e) => {
@@ -935,6 +938,7 @@ function setupEventListeners() {
     if (e.key === 'Escape') {
       closeWorkspaceModal();
       closeTabModal();
+      closeScreenshotPreview();
     }
   });
 }
@@ -1020,7 +1024,7 @@ function setupBottomPanelResizer() {
     if (newHeight > 80 && newHeight < 400) {
       bottomPanel.style.height = newHeight + 'px';
       bottomPanel.classList.remove('collapsed');
-      document.getElementById('bottom-panel-toggle').textContent = '\u25bc';
+      document.getElementById('bottom-panel-toggle').textContent = '▼';
     }
   });
   
@@ -1048,13 +1052,13 @@ function setupBottomSectionResizers() {
       const content = document.querySelector('.bottom-panel-content');
       const contentRect = content.getBoundingClientRect();
       
-      if (resizeType === 'files-terminal') {
-        const filesSection = document.getElementById('files-section');
+      if (resizeType === 'screenshots-terminal') {
+        const screenshotsSection = document.getElementById('screenshots-section');
         const newWidth = e.clientX - contentRect.left;
         const percent = (newWidth / contentRect.width) * 100;
         
-        if (percent > 15 && percent < 50) {
-          filesSection.style.flex = `0 0 ${percent}%`;
+        if (percent > 15 && percent < 60) {
+          screenshotsSection.style.flex = `0 0 ${percent}%`;
         }
       } else if (resizeType === 'terminal-scratchpad') {
         const scratchpadSection = document.getElementById('scratchpad-section');

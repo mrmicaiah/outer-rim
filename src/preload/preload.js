@@ -18,6 +18,12 @@ contextBridge.exposeInMainWorld('outerRim', {
   notes: {
     update: (workspaceId, notes) => ipcRenderer.invoke('notes:update', workspaceId, notes),
   },
+  screenshots: {
+    list: () => ipcRenderer.invoke('screenshots:list'),
+    copy: (filepath) => ipcRenderer.invoke('screenshots:copy', filepath),
+    getPath: () => ipcRenderer.invoke('screenshots:getPath'),
+    onNew: (callback) => ipcRenderer.on('screenshot:new', (event, filename) => callback(filename)),
+  },
   files: {
     list: (path) => ipcRenderer.invoke('files:list', path),
   },

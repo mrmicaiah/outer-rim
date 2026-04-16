@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, nativeImage, clipboard } = require('electron');
 const path = require('path');
 const Store = require('./store');
 const fs = require('fs');
@@ -8,6 +8,9 @@ const { exec } = require('child_process');
 const store = new Store();
 
 let mainWindow;
+
+// Screenshot folder path
+const SCREENSHOTS_PATH = path.join(os.homedir(), 'Desktop', 'screen_shot_data');
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -30,6 +33,31 @@ function createWindow() {
   if (process.argv.includes('--dev')) {
     mainWindow.webContents.openDevTools();
   }
+  
+  // Watch for new screenshots
+  watchScreenshots();
+}
+
+// Watch screenshots folder for changes
+let screenshotWatcher = null;
+function watchScreenshots() {
+  try {
+    // Make sure folder exists
+    if (!fs.existsSync(SCREENSHOTS_PATH)) {
+      fs.mkdirSync(SCREENSHOTS_PATH, { recursive: true });
+    }
+    
+    screenshotWatcher = fs.watch(SCREENSHOTS_PATH, (eventType, filename) => {
+      if (filename && (filename.endsWith('.png') || filename.endsWith('.jpg') || filename.endsWith('.jpeg'))) {
+        // Notify renderer of new screenshot
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('screenshot:new', filename);
+        }
+      }
+    });
+  } catch (err) {
+    console.error('Error watching screenshots folder:', err);
+  }
 }
 
 app.whenReady().then(() => {
@@ -43,6 +71,9 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  if (screenshotWatcher) {
+    screenshotWatcher.close();
+  }
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -112,13 +143,66 @@ ipcMain.handle('notes:update', (event, workspaceId, notes) => {
 });
 
 // ============================================
+// SCREENSHOTS IPC HANDLERS
+// ============================================
+
+ipcMain.handle('screenshots:list', async () => {
+  try {
+    // Make sure folder exists
+    if (!fs.existsSync(SCREENSHOTS_PATH)) {
+      fs.mkdirSync(SCREENSHOTS_PATH, { recursive: true });
+      return [];
+    }
+    
+    const files = await fs.promises.readdir(SCREENSHOTS_PATH);
+    
+    const screenshots = await Promise.all(
+      files
+        .filter(f => /\.(png|jpg|jpeg|gif)$/i.test(f))
+        .map(async (filename) => {
+          const filepath = path.join(SCREENSHOTS_PATH, filename);
+          const stat = await fs.promises.stat(filepath);
+          return {
+            name: filename,
+            path: filepath,
+            mtime: stat.mtime.getTime(),
+            size: stat.size,
+          };
+        })
+    );
+    
+    // Sort by most recent first
+    screenshots.sort((a, b) => b.mtime - a.mtime);
+    
+    return screenshots;
+  } catch (err) {
+    console.error('Error listing screenshots:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('screenshots:copy', async (event, filepath) => {
+  try {
+    const image = nativeImage.createFromPath(filepath);
+    clipboard.writeImage(image);
+    return true;
+  } catch (err) {
+    console.error('Error copying screenshot:', err);
+    return false;
+  }
+});
+
+ipcMain.handle('screenshots:getPath', () => {
+  return SCREENSHOTS_PATH;
+});
+
+// ============================================
 // FILES IPC HANDLERS
 // ============================================
 
 ipcMain.handle('files:list', async (event, inputPath) => {
   let resolvedPath = inputPath;
   
-  // Expand ~ to home directory
   if (resolvedPath.startsWith('~')) {
     resolvedPath = resolvedPath.replace('~', os.homedir());
   }
@@ -144,7 +228,6 @@ ipcMain.handle('files:list', async (event, inputPath) => {
       };
     }));
     
-    // Filter out hidden files (starting with .)
     return files.filter(f => !f.name.startsWith('.'));
   } catch (err) {
     throw new Error(`Cannot read directory: ${err.message}`);
@@ -157,7 +240,6 @@ ipcMain.handle('files:list', async (event, inputPath) => {
 
 ipcMain.handle('terminal:run', async (event, command) => {
   return new Promise((resolve) => {
-    // Run in user's home directory
     const cwd = os.homedir();
     
     exec(command, { cwd, timeout: 30000 }, (error, stdout, stderr) => {

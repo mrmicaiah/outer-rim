@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: file:; connect-src 'self' https:;">
   <title>Outer Rim</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -89,21 +89,17 @@
         </div>
         
         <div class="bottom-panel-content">
-          <!-- FILES SECTION -->
-          <div class="bottom-section" id="files-section">
+          <!-- SCREENSHOTS SECTION -->
+          <div class="bottom-section" id="screenshots-section">
             <div class="bottom-section-header">
-              <span>📁 Files</span>
+              <span>📸 Screenshots</span>
+              <button id="screenshots-refresh" title="Refresh">↻</button>
             </div>
-            <div class="files-toolbar">
-              <input type="text" id="files-path" placeholder="~/" value="~">
-              <button id="files-up" title="Up">↑</button>
-              <button id="files-refresh" title="Refresh">↻</button>
-            </div>
-            <div id="files-list"></div>
+            <div id="screenshots-list"></div>
           </div>
 
           <!-- SECTION RESIZER -->
-          <div class="bottom-section-resizer" data-resize="files-terminal"></div>
+          <div class="bottom-section-resizer" data-resize="screenshots-terminal"></div>
 
           <!-- TERMINAL SECTION -->
           <div class="bottom-section" id="terminal-section">
@@ -144,6 +140,17 @@
     <h2>Welcome to Outer Rim</h2>
     <p>Create a workspace to get started</p>
     <button id="empty-create-workspace">Create Workspace</button>
+  </div>
+
+  <!-- Screenshot Preview Modal -->
+  <div id="screenshot-preview-overlay" class="hidden">
+    <div id="screenshot-preview">
+      <img id="screenshot-preview-img" src="" alt="Screenshot preview">
+      <div class="screenshot-preview-actions">
+        <button id="screenshot-copy" class="btn-primary">Copy to Clipboard</button>
+        <button id="screenshot-close" class="btn-secondary">Close</button>
+      </div>
+    </div>
   </div>
 
   <!-- Modal for creating/editing workspaces -->
