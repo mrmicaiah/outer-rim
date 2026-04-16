@@ -13,8 +13,9 @@ let activeWorkspace = null;
 let activePane = 'left';
 let scratchpadContent = '';
 
-// Resizer state - global to ensure proper cleanup
+// Resizer state
 let currentResizer = null;
+let resizeOverlay = null;
 
 // DOM Elements
 const workspaceList = document.getElementById('workspace-list');
@@ -47,6 +48,20 @@ async function init() {
   scratchpadContent = await window.outerRim.scratchpad.get() || '';
   document.getElementById('scratchpad-content').value = scratchpadContent;
   
+  // Create resize overlay (blocks webview from stealing mouse events)
+  resizeOverlay = document.createElement('div');
+  resizeOverlay.id = 'resize-overlay';
+  resizeOverlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 9999;
+    display: none;
+  `;
+  document.body.appendChild(resizeOverlay);
+  
   renderWorkspaces();
   renderPanes();
   updateNotepad();
@@ -66,25 +81,32 @@ async function init() {
   window.outerRim.onMenuToggleDevTools(() => {
     toggleActiveWebviewDevTools();
   });
-  
-  // Global mouseup handler for all resizers
-  document.addEventListener('mouseup', handleGlobalMouseUp);
-  document.addEventListener('mousemove', handleGlobalMouseMove);
 }
 
 // ============================================
 // GLOBAL RESIZE HANDLERS
 // ============================================
 
-function handleGlobalMouseUp() {
-  if (currentResizer) {
-    currentResizer = null;
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-  }
+function startResize(type, e, extras = {}) {
+  currentResizer = {
+    type,
+    startX: e.clientX,
+    startY: e.clientY,
+    ...extras
+  };
+  resizeOverlay.style.display = 'block';
+  document.body.style.cursor = type === 'bottom' ? 'row-resize' : 'col-resize';
+  document.body.style.userSelect = 'none';
 }
 
-function handleGlobalMouseMove(e) {
+function stopResize() {
+  currentResizer = null;
+  resizeOverlay.style.display = 'none';
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+}
+
+function handleMouseMove(e) {
   if (!currentResizer) return;
   
   const { type, startX, startY, startLeftWidth, startRightWidth, startWidth, startHeight } = currentResizer;
@@ -1034,6 +1056,10 @@ function confirmTabModal() {
 // ============================================
 
 function setupEventListeners() {
+  // Global mouse handlers for resizing
+  document.addEventListener('mousemove', handleMouseMove);
+  document.addEventListener('mouseup', stopResize);
+  
   document.getElementById('add-workspace').addEventListener('click', openCreateWorkspaceModal);
   document.getElementById('empty-create-workspace').addEventListener('click', openCreateWorkspaceModal);
   
@@ -1130,7 +1156,33 @@ function setupEventListeners() {
   notepadToggle.addEventListener('click', toggleNotepad);
   notepadExpand.addEventListener('click', expandNotepad);
   
-  setupResizers();
+  // Setup resizers
+  document.getElementById('pane-resizer').addEventListener('mousedown', (e) => {
+    const leftPane = document.getElementById('left-pane');
+    const rightPane = document.getElementById('right-pane');
+    startResize('pane', e, {
+      startLeftWidth: leftPane.offsetWidth,
+      startRightWidth: rightPane.offsetWidth
+    });
+  });
+  
+  document.getElementById('notepad-resizer').addEventListener('mousedown', (e) => {
+    startResize('notepad', e, {
+      startWidth: notepadPanel.offsetWidth
+    });
+  });
+  
+  document.getElementById('bottom-panel-resizer').addEventListener('mousedown', (e) => {
+    startResize('bottom', e, {
+      startHeight: bottomPanel.offsetHeight
+    });
+  });
+  
+  document.querySelectorAll('.bottom-section-resizer').forEach(resizer => {
+    resizer.addEventListener('mousedown', (e) => {
+      startResize(resizer.dataset.resize, e, {});
+    });
+  });
   
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 't') {
@@ -1180,59 +1232,6 @@ function setupEventListeners() {
       closeTabModal();
       closeScreenshotPreview();
     }
-  });
-}
-
-function setupResizers() {
-  // Pane resizer
-  const paneResizer = document.getElementById('pane-resizer');
-  paneResizer.addEventListener('mousedown', (e) => {
-    const leftPane = document.getElementById('left-pane');
-    const rightPane = document.getElementById('right-pane');
-    currentResizer = {
-      type: 'pane',
-      startX: e.clientX,
-      startLeftWidth: leftPane.offsetWidth,
-      startRightWidth: rightPane.offsetWidth
-    };
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-  });
-  
-  // Notepad resizer
-  const notepadResizer = document.getElementById('notepad-resizer');
-  notepadResizer.addEventListener('mousedown', (e) => {
-    currentResizer = {
-      type: 'notepad',
-      startX: e.clientX,
-      startWidth: notepadPanel.offsetWidth
-    };
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-  });
-  
-  // Bottom panel resizer
-  const bottomResizer = document.getElementById('bottom-panel-resizer');
-  bottomResizer.addEventListener('mousedown', (e) => {
-    currentResizer = {
-      type: 'bottom',
-      startY: e.clientY,
-      startHeight: bottomPanel.offsetHeight
-    };
-    document.body.style.cursor = 'row-resize';
-    document.body.style.userSelect = 'none';
-  });
-  
-  // Bottom section resizers
-  document.querySelectorAll('.bottom-section-resizer').forEach(resizer => {
-    resizer.addEventListener('mousedown', (e) => {
-      currentResizer = {
-        type: resizer.dataset.resize,
-        startX: e.clientX
-      };
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-    });
   });
 }
 
