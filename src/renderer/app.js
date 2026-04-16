@@ -1,6 +1,6 @@
 // ============================================
 // OUTER RIM - Renderer Application
-// Dual-Pane + Navigation Bar + Bottom Workspace Bar
+// Dual-Pane + Navigation + Bottom Tool Panel
 // ============================================
 
 function uuidv4() {
@@ -11,6 +11,9 @@ function uuidv4() {
 let workspaces = [];
 let activeWorkspace = null;
 let activePane = 'left';
+let activeBottomPanel = 'files';
+let currentFilesPath = '~';
+let scratchpadContent = '';
 
 // DOM Elements
 const workspaceList = document.getElementById('workspace-list');
@@ -19,6 +22,7 @@ const emptyStateOverlay = document.getElementById('empty-state-overlay');
 const notepadPanel = document.getElementById('notepad-panel');
 const notepadExpand = document.getElementById('notepad-expand');
 const notepadToggle = document.getElementById('notepad-toggle');
+const bottomPanel = document.getElementById('bottom-panel');
 
 // Modals
 const modalOverlay = document.getElementById('modal-overlay');
@@ -38,11 +42,18 @@ async function init() {
     activeWorkspace = workspaces.find(w => w.id === active.id);
   }
   
+  // Load scratchpad
+  scratchpadContent = await window.outerRim.scratchpad.get() || '';
+  document.getElementById('scratchpad-content').value = scratchpadContent;
+  
   renderWorkspaces();
   renderPanes();
   updateNotepad();
   updateEmptyState();
   setupEventListeners();
+  
+  // Initial file load
+  loadFiles(currentFilesPath);
 }
 
 // ============================================
@@ -317,12 +328,10 @@ function updateNavBar(paneName) {
     const tab = pane.tabs.find(t => t.id === pane.activeTabId);
     navUrl.value = tab?.url || '';
     
-    // Update back/forward button states
     try {
       navBack.disabled = !webview.canGoBack();
       navForward.disabled = !webview.canGoForward();
     } catch (e) {
-      // Webview might not be ready yet
       navBack.disabled = true;
       navForward.disabled = true;
     }
@@ -479,7 +488,6 @@ async function updateTabUrl(paneName, tabId, url) {
     tab.url = url;
     await window.outerRim.workspace.update(activeWorkspace);
     
-    // Update nav bar URL if this is the active tab
     const pane = activeWorkspace.panes[paneName];
     if (pane.activeTabId === tabId) {
       const navUrl = document.querySelector(`.nav-url[data-pane="${paneName}"]`);
@@ -525,6 +533,181 @@ function expandNotepad() {
   notepadPanel.classList.remove('collapsed');
   notepadToggle.textContent = '\u25c0';
   notepadExpand.classList.add('hidden');
+}
+
+// ============================================
+// BOTTOM PANEL MANAGEMENT
+// ============================================
+
+function switchBottomPanel(panelName) {
+  activeBottomPanel = panelName;
+  
+  document.querySelectorAll('.bottom-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.panel === panelName);
+  });
+  
+  document.querySelectorAll('.bottom-panel-section').forEach(section => {
+    section.classList.toggle('active', section.id === `${panelName}-panel`);
+  });
+}
+
+function toggleBottomPanel() {
+  const isCollapsed = bottomPanel.classList.toggle('collapsed');
+  document.getElementById('bottom-panel-toggle').textContent = isCollapsed ? '\u25b2' : '\u25bc';
+}
+
+// ============================================
+// FILES PANEL
+// ============================================
+
+async function loadFiles(path) {
+  currentFilesPath = path;
+  document.getElementById('files-path').value = path;
+  
+  const filesList = document.getElementById('files-list');
+  filesList.innerHTML = '<div class="file-item"><span class="file-icon">⏳</span><span class="file-name">Loading...</span></div>';
+  
+  try {
+    const files = await window.outerRim.files.list(path);
+    renderFiles(files);
+  } catch (err) {
+    filesList.innerHTML = `<div class="file-item"><span class="file-icon">❌</span><span class="file-name">Error: ${err.message}</span></div>`;
+  }
+}
+
+function renderFiles(files) {
+  const filesList = document.getElementById('files-list');
+  filesList.innerHTML = '';
+  
+  if (files.length === 0) {
+    filesList.innerHTML = '<div class="file-item"><span class="file-icon">📭</span><span class="file-name">Empty directory</span></div>';
+    return;
+  }
+  
+  // Sort: directories first, then files
+  files.sort((a, b) => {
+    if (a.isDirectory && !b.isDirectory) return -1;
+    if (!a.isDirectory && b.isDirectory) return 1;
+    return a.name.localeCompare(b.name);
+  });
+  
+  files.forEach(file => {
+    const item = document.createElement('div');
+    item.className = `file-item ${file.isDirectory ? 'directory' : ''}`;
+    
+    const icon = file.isDirectory ? '📁' : getFileIcon(file.name);
+    const size = file.isDirectory ? '' : formatFileSize(file.size);
+    
+    item.innerHTML = `
+      <span class="file-icon">${icon}</span>
+      <span class="file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+      <span class="file-size">${size}</span>
+    `;
+    
+    item.addEventListener('click', () => {
+      if (file.isDirectory) {
+        const newPath = currentFilesPath === '~' 
+          ? `~/${file.name}`
+          : `${currentFilesPath}/${file.name}`;
+        loadFiles(newPath);
+      }
+    });
+    
+    item.addEventListener('dblclick', () => {
+      if (!file.isDirectory) {
+        // Could open file in editor or show preview
+        appendTerminalOutput(`File: ${file.name}`, 'output');
+      }
+    });
+    
+    filesList.appendChild(item);
+  });
+}
+
+function getFileIcon(filename) {
+  const ext = filename.split('.').pop().toLowerCase();
+  const icons = {
+    js: '📜', ts: '📜', jsx: '⚛️', tsx: '⚛️',
+    html: '🌐', css: '🎨', scss: '🎨',
+    json: '📋', md: '📝', txt: '📄',
+    py: '🐍', rb: '💎', go: '🔷',
+    jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', svg: '🖼️',
+    pdf: '📕', doc: '📘', docx: '📘',
+    zip: '📦', tar: '📦', gz: '📦',
+    mp3: '🎵', wav: '🎵', mp4: '🎬', mov: '🎬',
+    sh: '⚙️', bash: '⚙️', zsh: '⚙️',
+  };
+  return icons[ext] || '📄';
+}
+
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 B';
+  if (!bytes) return '';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function navigateFilesUp() {
+  if (currentFilesPath === '~' || currentFilesPath === '/') return;
+  
+  const parts = currentFilesPath.split('/');
+  parts.pop();
+  const newPath = parts.join('/') || '~';
+  loadFiles(newPath);
+}
+
+// ============================================
+// TERMINAL PANEL
+// ============================================
+
+const terminalHistory = [];
+let historyIndex = -1;
+
+function appendTerminalOutput(text, type = 'output') {
+  const output = document.getElementById('terminal-output');
+  const line = document.createElement('div');
+  line.className = `terminal-line ${type}`;
+  line.textContent = text;
+  output.appendChild(line);
+  output.scrollTop = output.scrollHeight;
+}
+
+async function runTerminalCommand(command) {
+  if (!command.trim()) return;
+  
+  terminalHistory.push(command);
+  historyIndex = terminalHistory.length;
+  
+  appendTerminalOutput(`$ ${command}`, 'command');
+  
+  try {
+    const result = await window.outerRim.terminal.run(command);
+    if (result.stdout) {
+      appendTerminalOutput(result.stdout, 'output');
+    }
+    if (result.stderr) {
+      appendTerminalOutput(result.stderr, 'error');
+    }
+  } catch (err) {
+    appendTerminalOutput(`Error: ${err.message}`, 'error');
+  }
+  
+  document.getElementById('terminal-input').value = '';
+}
+
+// ============================================
+// SCRATCHPAD PANEL
+// ============================================
+
+let scratchpadSaveTimeout = null;
+async function saveScratchpad() {
+  clearTimeout(scratchpadSaveTimeout);
+  scratchpadSaveTimeout = setTimeout(async () => {
+    const content = document.getElementById('scratchpad-content').value;
+    await window.outerRim.scratchpad.save(content);
+  }, 500);
 }
 
 // ============================================
@@ -656,6 +839,54 @@ function setupEventListeners() {
     });
   });
   
+  // Bottom panel tabs
+  document.querySelectorAll('.bottom-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      switchBottomPanel(tab.dataset.panel);
+    });
+  });
+  
+  document.getElementById('bottom-panel-toggle').addEventListener('click', toggleBottomPanel);
+  
+  // Files panel
+  document.getElementById('files-go').addEventListener('click', () => {
+    loadFiles(document.getElementById('files-path').value.trim());
+  });
+  
+  document.getElementById('files-path').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      loadFiles(e.target.value.trim());
+    }
+  });
+  
+  document.getElementById('files-up').addEventListener('click', navigateFilesUp);
+  document.getElementById('files-refresh').addEventListener('click', () => loadFiles(currentFilesPath));
+  
+  // Terminal panel
+  document.getElementById('terminal-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      runTerminalCommand(e.target.value);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (historyIndex > 0) {
+        historyIndex--;
+        e.target.value = terminalHistory[historyIndex];
+      }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (historyIndex < terminalHistory.length - 1) {
+        historyIndex++;
+        e.target.value = terminalHistory[historyIndex];
+      } else {
+        historyIndex = terminalHistory.length;
+        e.target.value = '';
+      }
+    }
+  });
+  
+  // Scratchpad panel
+  document.getElementById('scratchpad-content').addEventListener('input', saveScratchpad);
+  
   // Workspace modal
   document.getElementById('modal-cancel').addEventListener('click', closeWorkspaceModal);
   document.getElementById('modal-confirm').addEventListener('click', confirmWorkspaceModal);
@@ -689,6 +920,7 @@ function setupEventListeners() {
   
   setupPaneResizer();
   setupNotepadResizer();
+  setupBottomPanelResizer();
   
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 't') {
@@ -724,6 +956,10 @@ function setupEventListeners() {
         navUrl.focus();
         navUrl.select();
       }
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === '`') {
+      e.preventDefault();
+      toggleBottomPanel();
     }
     if (e.key === 'Escape') {
       closeWorkspaceModal();
@@ -784,6 +1020,36 @@ function setupNotepadResizer() {
     
     if (newWidth > 150 && newWidth < 500) {
       notepadPanel.style.width = newWidth + 'px';
+    }
+  });
+  
+  document.addEventListener('mouseup', () => {
+    isResizing = false;
+    document.body.style.cursor = '';
+  });
+}
+
+function setupBottomPanelResizer() {
+  const resizer = document.getElementById('bottom-panel-resizer');
+  let isResizing = false;
+  
+  resizer.addEventListener('mousedown', () => {
+    isResizing = true;
+    document.body.style.cursor = 'row-resize';
+  });
+  
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    
+    const mainContent = document.getElementById('main-content');
+    const mainRect = mainContent.getBoundingClientRect();
+    const workspaceBarHeight = 42;
+    const newHeight = mainRect.bottom - e.clientY - workspaceBarHeight;
+    
+    if (newHeight > 100 && newHeight < 400) {
+      bottomPanel.style.height = newHeight + 'px';
+      bottomPanel.classList.remove('collapsed');
+      document.getElementById('bottom-panel-toggle').textContent = '\u25bc';
     }
   });
   
