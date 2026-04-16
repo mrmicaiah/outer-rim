@@ -9,12 +9,6 @@ contextBridge.exposeInMainWorld('outerRim', {
     delete: (id) => ipcRenderer.invoke('workspace:delete', id),
     setActive: (id) => ipcRenderer.invoke('workspace:setActive', id),
   },
-  tab: {
-    add: (workspaceId, tab) => ipcRenderer.invoke('tab:add', workspaceId, tab),
-    update: (workspaceId, tab) => ipcRenderer.invoke('tab:update', workspaceId, tab),
-    remove: (workspaceId, tabId) => ipcRenderer.invoke('tab:remove', workspaceId, tabId),
-    setActive: (workspaceId, tabId) => ipcRenderer.invoke('tab:setActive', workspaceId, tabId),
-  },
   notes: {
     update: (workspaceId, notes) => ipcRenderer.invoke('notes:update', workspaceId, notes),
   },
@@ -36,4 +30,6 @@ contextBridge.exposeInMainWorld('outerRim', {
     get: () => ipcRenderer.invoke('scratchpad:get'),
     save: (content) => ipcRenderer.invoke('scratchpad:save', content),
   },
+  // Menu events
+  onMenuToggleDevTools: (callback) => ipcRenderer.on('menu:toggleDevTools', callback),
 });
