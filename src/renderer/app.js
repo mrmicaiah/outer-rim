@@ -47,6 +47,89 @@ async function init() {
 }
 
 // ============================================
+// UTILITY: Simplify Tab Title
+// ============================================
+
+function simplifyTitle(title, url) {
+  if (!title || title === 'Loading...') return title || 'New Tab';
+  
+  // Try to extract site name from URL as fallback
+  let siteName = '';
+  try {
+    const hostname = new URL(url).hostname;
+    // Remove www. and get the main domain part
+    siteName = hostname.replace(/^www\./, '').split('.')[0];
+    // Capitalize first letter
+    siteName = siteName.charAt(0).toUpperCase() + siteName.slice(1);
+  } catch (e) {
+    siteName = '';
+  }
+  
+  // Common patterns to simplify
+  // "Cloudflare Dashboard | Overview | example.com" -> "Cloudflare"
+  // "GitHub - user/repo: description" -> "GitHub"
+  // "Google Docs - Document Name" -> "Google Docs"
+  // "Claude" -> "Claude"
+  
+  // If title starts with a known brand, use that
+  const knownBrands = [
+    'Claude', 'GitHub', 'Google', 'Cloudflare', 'Vercel', 'Netlify', 
+    'AWS', 'Azure', 'Firebase', 'Supabase', 'Discord', 'Slack',
+    'Twitter', 'X', 'LinkedIn', 'Facebook', 'Instagram', 'YouTube',
+    'Reddit', 'Stack Overflow', 'ChatGPT', 'OpenAI', 'Notion',
+    'Figma', 'Linear', 'Jira', 'Trello', 'Asana'
+  ];
+  
+  for (const brand of knownBrands) {
+    if (title.toLowerCase().startsWith(brand.toLowerCase())) {
+      return brand;
+    }
+    // Also check if brand appears after common separators
+    const patterns = [
+      new RegExp(`^${brand}\\s*[-|:]`, 'i'),
+      new RegExp(`[-|:]\\s*${brand}$`, 'i'),
+    ];
+    for (const pattern of patterns) {
+      if (pattern.test(title)) {
+        return brand;
+      }
+    }
+  }
+  
+  // If title contains separator, take the first meaningful part
+  const separators = [' | ', ' - ', ' — ', ' · ', ': '];
+  for (const sep of separators) {
+    if (title.includes(sep)) {
+      const parts = title.split(sep);
+      // Return the shortest part that's at least 2 chars (likely the brand/site name)
+      const shortPart = parts
+        .filter(p => p.trim().length >= 2)
+        .sort((a, b) => a.length - b.length)[0];
+      if (shortPart && shortPart.length <= 20) {
+        return shortPart.trim();
+      }
+      // Otherwise return first part if it's reasonable length
+      if (parts[0].trim().length <= 25) {
+        return parts[0].trim();
+      }
+    }
+  }
+  
+  // If title is short enough, use it as-is
+  if (title.length <= 20) {
+    return title;
+  }
+  
+  // Fall back to site name from URL if we have it
+  if (siteName && siteName.length > 1) {
+    return siteName;
+  }
+  
+  // Last resort: truncate
+  return title.substring(0, 18) + '...';
+}
+
+// ============================================
 // WORKSPACE MANAGEMENT
 // ============================================
 
@@ -186,17 +269,25 @@ function renderPane(paneName) {
     item.dataset.pane = paneName;
     
     const favicon = getFaviconUrl(tab.url);
+    const displayTitle = simplifyTitle(tab.title, tab.url);
     
     item.innerHTML = `
       <img class="pane-tab-favicon" src="${favicon}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><rect fill=%22%23666%22 width=%2216%22 height=%2216%22 rx=%222%22/></svg>'">
-      <span class="pane-tab-title">${escapeHtml(tab.title || 'New Tab')}</span>
+      <span class="pane-tab-title" title="${escapeHtml(tab.title || '')}">${escapeHtml(displayTitle)}</span>
+      <button class="pane-tab-refresh" title="Refresh">↻</button>
       <button class="pane-tab-close" title="Close tab">×</button>
     `;
     
     item.addEventListener('click', (e) => {
-      if (!e.target.classList.contains('pane-tab-close')) {
+      if (!e.target.classList.contains('pane-tab-close') && 
+          !e.target.classList.contains('pane-tab-refresh')) {
         switchTab(paneName, tab.id);
       }
+    });
+    
+    item.querySelector('.pane-tab-refresh').addEventListener('click', (e) => {
+      e.stopPropagation();
+      refreshTab(paneName, tab.id);
     });
     
     item.querySelector('.pane-tab-close').addEventListener('click', (e) => {
@@ -282,6 +373,13 @@ async function switchTab(paneName, tabId) {
   });
 }
 
+function refreshTab(paneName, tabId) {
+  const webview = document.getElementById(`webview-${paneName}-${tabId}`);
+  if (webview) {
+    webview.reload();
+  }
+}
+
 async function closeTab(paneName, tabId) {
   if (!activeWorkspace) return;
   
@@ -308,9 +406,12 @@ async function updateTabTitle(paneName, tabId, title) {
     tab.title = title;
     await window.outerRim.workspace.update(activeWorkspace);
     
+    // Update displayed title (simplified)
     const tabEl = document.querySelector(`.pane-tab-item[data-pane="${paneName}"][data-id="${tabId}"] .pane-tab-title`);
     if (tabEl) {
-      tabEl.textContent = title;
+      const displayTitle = simplifyTitle(title, tab.url);
+      tabEl.textContent = displayTitle;
+      tabEl.title = title; // Full title on hover
     }
   }
 }
@@ -537,6 +638,13 @@ function setupEventListeners() {
     if ((e.metaKey || e.ctrlKey) && e.key === '2') {
       e.preventDefault();
       activePane = 'right';
+    }
+    // Cmd+R to refresh active tab
+    if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
+      e.preventDefault();
+      if (activeWorkspace?.panes[activePane]?.activeTabId) {
+        refreshTab(activePane, activeWorkspace.panes[activePane].activeTabId);
+      }
     }
     if (e.key === 'Escape') {
       closeWorkspaceModal();

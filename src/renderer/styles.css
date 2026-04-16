@@ -163,7 +163,7 @@ body {
   background: var(--bg-tertiary);
   border-radius: 4px 4px 0 0;
   cursor: pointer;
-  max-width: 160px;
+  max-width: 140px;
   min-width: 60px;
   transition: background var(--transition);
 }
@@ -197,13 +197,36 @@ body {
   color: var(--text-primary);
 }
 
+.pane-tab-refresh {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  margin-left: 2px;
+  border-radius: 4px;
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity var(--transition);
+  flex-shrink: 0;
+}
+
+.pane-tab-item:hover .pane-tab-refresh {
+  opacity: 1;
+}
+
+.pane-tab-refresh:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
 .pane-tab-close {
   background: none;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
   padding: 2px 4px;
-  margin-left: 4px;
+  margin-left: 2px;
   border-radius: 4px;
   font-size: 12px;
   opacity: 0;
