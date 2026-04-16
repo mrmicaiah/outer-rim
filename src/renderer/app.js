@@ -1130,80 +1130,100 @@ function setupPaneResizer() {
   const leftPane = document.getElementById('left-pane');
   const rightPane = document.getElementById('right-pane');
   let isResizing = false;
+  let startX = 0;
+  let startLeftWidth = 0;
+  let startRightWidth = 0;
   
-  resizer.addEventListener('mousedown', () => {
+  resizer.addEventListener('mousedown', (e) => {
     isResizing = true;
+    startX = e.clientX;
+    startLeftWidth = leftPane.offsetWidth;
+    startRightWidth = rightPane.offsetWidth;
     document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
   });
   
   document.addEventListener('mousemove', (e) => {
     if (!isResizing) return;
     
-    const container = document.getElementById('dual-pane-container');
-    const containerRect = container.getBoundingClientRect();
-    const notepadWidth = notepadPanel.classList.contains('collapsed') ? 0 : notepadPanel.offsetWidth;
-    const availableWidth = containerRect.width - notepadWidth - 12;
-    const newLeftWidth = e.clientX - containerRect.left;
+    const delta = e.clientX - startX;
+    const totalWidth = startLeftWidth + startRightWidth;
+    const newLeftWidth = startLeftWidth + delta;
+    const newRightWidth = startRightWidth - delta;
     
-    const leftPercent = (newLeftWidth / availableWidth) * 100;
-    
-    if (leftPercent > 20 && leftPercent < 80) {
-      leftPane.style.flex = `0 0 ${leftPercent}%`;
-      rightPane.style.flex = `0 0 ${100 - leftPercent}%`;
+    // Ensure minimum widths
+    if (newLeftWidth >= 200 && newRightWidth >= 200) {
+      leftPane.style.width = newLeftWidth + 'px';
+      leftPane.style.flex = 'none';
+      rightPane.style.width = newRightWidth + 'px';
+      rightPane.style.flex = 'none';
     }
   });
   
   document.addEventListener('mouseup', () => {
-    isResizing = false;
-    document.body.style.cursor = '';
+    if (isResizing) {
+      isResizing = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
   });
 }
 
 function setupNotepadResizer() {
   const resizer = document.getElementById('notepad-resizer');
   let isResizing = false;
+  let startX = 0;
+  let startWidth = 0;
   
-  resizer.addEventListener('mousedown', () => {
+  resizer.addEventListener('mousedown', (e) => {
     isResizing = true;
+    startX = e.clientX;
+    startWidth = notepadPanel.offsetWidth;
     document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
   });
   
   document.addEventListener('mousemove', (e) => {
     if (!isResizing) return;
     
-    const container = document.getElementById('dual-pane-container');
-    const containerRect = container.getBoundingClientRect();
-    const newWidth = containerRect.right - e.clientX;
+    const delta = startX - e.clientX;
+    const newWidth = startWidth + delta;
     
-    if (newWidth > 150 && newWidth < 500) {
+    if (newWidth >= 150 && newWidth <= 500) {
       notepadPanel.style.width = newWidth + 'px';
     }
   });
   
   document.addEventListener('mouseup', () => {
-    isResizing = false;
-    document.body.style.cursor = '';
+    if (isResizing) {
+      isResizing = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
   });
 }
 
 function setupBottomPanelResizer() {
   const resizer = document.getElementById('bottom-panel-resizer');
   let isResizing = false;
+  let startY = 0;
+  let startHeight = 0;
   
-  resizer.addEventListener('mousedown', () => {
+  resizer.addEventListener('mousedown', (e) => {
     isResizing = true;
+    startY = e.clientY;
+    startHeight = bottomPanel.offsetHeight;
     document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
   });
   
   document.addEventListener('mousemove', (e) => {
     if (!isResizing) return;
     
-    const mainContent = document.getElementById('main-content');
-    const mainRect = mainContent.getBoundingClientRect();
-    const workspaceBarHeight = 42;
-    const newHeight = mainRect.bottom - e.clientY - workspaceBarHeight;
+    const delta = startY - e.clientY;
+    const newHeight = startHeight + delta;
     
-    if (newHeight > 80 && newHeight < 400) {
+    if (newHeight >= 80 && newHeight <= 400) {
       bottomPanel.style.height = newHeight + 'px';
       bottomPanel.classList.remove('collapsed');
       document.getElementById('bottom-panel-toggle').textContent = '▼';
@@ -1211,8 +1231,11 @@ function setupBottomPanelResizer() {
   });
   
   document.addEventListener('mouseup', () => {
-    isResizing = false;
-    document.body.style.cursor = '';
+    if (isResizing) {
+      isResizing = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
   });
 }
 
@@ -1226,6 +1249,7 @@ function setupBottomSectionResizers() {
     resizer.addEventListener('mousedown', () => {
       isResizing = true;
       document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
     });
     
     document.addEventListener('mousemove', (e) => {
@@ -1254,8 +1278,11 @@ function setupBottomSectionResizers() {
     });
     
     document.addEventListener('mouseup', () => {
-      isResizing = false;
-      document.body.style.cursor = '';
+      if (isResizing) {
+        isResizing = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
     });
   });
 }
