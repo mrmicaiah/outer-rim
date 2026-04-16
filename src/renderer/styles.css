@@ -1,6 +1,6 @@
 /* ============================================
    OUTER RIM - Dark Theme Styles
-   With Bottom Tool Panel
+   With Three-Column Bottom Panel
    ============================================ */
 
 :root {
@@ -23,7 +23,7 @@
   --pane-tab-height: 36px;
   --pane-nav-height: 32px;
   --bottom-panel-height: 200px;
-  --bottom-tab-height: 32px;
+  --bottom-header-height: 28px;
   --transition: 150ms ease;
 }
 
@@ -453,7 +453,7 @@ body {
 }
 
 /* ============================================
-   BOTTOM TOOL PANEL
+   BOTTOM TOOL PANEL - THREE COLUMNS
    ============================================ */
 
 #bottom-panel {
@@ -466,47 +466,28 @@ body {
 }
 
 #bottom-panel.collapsed {
-  height: var(--bottom-tab-height);
+  height: var(--bottom-header-height);
 }
 
 #bottom-panel.collapsed .bottom-panel-content {
   display: none;
 }
 
-.bottom-panel-tabs {
-  height: var(--bottom-tab-height);
+.bottom-panel-header {
+  height: var(--bottom-header-height);
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
-  padding: 0 8px;
-  gap: 4px;
+  justify-content: space-between;
+  padding: 0 12px;
   flex-shrink: 0;
 }
 
-.bottom-tab {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 6px 12px;
+.bottom-panel-title {
   font-size: 11px;
-  border-radius: 4px;
-  transition: all var(--transition);
-}
-
-.bottom-tab:hover {
-  background: var(--bg-hover);
+  font-weight: 500;
   color: var(--text-secondary);
-}
-
-.bottom-tab.active {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
-
-.bottom-panel-spacer {
-  flex: 1;
 }
 
 #bottom-panel-toggle {
@@ -526,45 +507,74 @@ body {
 
 .bottom-panel-content {
   flex: 1;
-  overflow: hidden;
-  position: relative;
-}
-
-.bottom-panel-section {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: none;
-  flex-direction: column;
-}
-
-.bottom-panel-section.active {
   display: flex;
+  overflow: hidden;
 }
 
 /* ============================================
-   FILES PANEL
+   BOTTOM SECTIONS (Files, Terminal, Scratchpad)
    ============================================ */
+
+.bottom-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  border-right: 1px solid var(--border-color);
+}
+
+.bottom-section:last-child {
+  border-right: none;
+}
+
+.bottom-section-header {
+  height: 24px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.bottom-section-resizer {
+  width: 6px;
+  background: var(--border-color);
+  cursor: col-resize;
+  transition: background var(--transition);
+}
+
+.bottom-section-resizer:hover {
+  background: var(--accent);
+}
+
+/* ============================================
+   FILES SECTION
+   ============================================ */
+
+#files-section {
+  flex: 1;
+}
 
 .files-toolbar {
   display: flex;
-  padding: 6px 8px;
+  padding: 4px 6px;
   gap: 4px;
   border-bottom: 1px solid var(--border-color);
 }
 
 #files-path {
   flex: 1;
-  height: 26px;
+  height: 22px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: 3px;
   color: var(--text-primary);
   font-family: 'SF Mono', monospace;
-  font-size: 11px;
-  padding: 0 8px;
+  font-size: 10px;
+  padding: 0 6px;
   outline: none;
 }
 
@@ -575,11 +585,11 @@ body {
 .files-toolbar button {
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: 3px;
   color: var(--text-secondary);
   cursor: pointer;
-  padding: 4px 8px;
-  font-size: 12px;
+  padding: 2px 6px;
+  font-size: 11px;
 }
 
 .files-toolbar button:hover {
@@ -590,18 +600,18 @@ body {
 #files-list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px;
+  padding: 2px;
 }
 
 .file-item {
   display: flex;
   align-items: center;
-  padding: 6px 8px;
-  border-radius: 4px;
+  padding: 3px 6px;
+  border-radius: 3px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
-  gap: 8px;
+  gap: 6px;
 }
 
 .file-item:hover {
@@ -614,8 +624,8 @@ body {
 }
 
 .file-icon {
-  font-size: 14px;
-  width: 18px;
+  font-size: 12px;
+  width: 16px;
   text-align: center;
 }
 
@@ -627,20 +637,24 @@ body {
 }
 
 .file-size {
-  font-size: 10px;
+  font-size: 9px;
   color: var(--text-muted);
 }
 
 /* ============================================
-   TERMINAL PANEL
+   TERMINAL SECTION
    ============================================ */
+
+#terminal-section {
+  flex: 1;
+}
 
 #terminal-output {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 12px;
+  padding: 6px 8px;
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-all;
@@ -665,7 +679,7 @@ body {
 .terminal-input-row {
   display: flex;
   align-items: center;
-  padding: 8px 12px;
+  padding: 4px 8px;
   border-top: 1px solid var(--border-color);
   background: var(--bg-tertiary);
 }
@@ -673,8 +687,8 @@ body {
 .terminal-prompt {
   color: var(--success);
   font-family: 'SF Mono', monospace;
-  font-size: 12px;
-  margin-right: 8px;
+  font-size: 11px;
+  margin-right: 6px;
 }
 
 #terminal-input {
@@ -683,7 +697,7 @@ body {
   border: none;
   color: var(--text-primary);
   font-family: 'SF Mono', monospace;
-  font-size: 12px;
+  font-size: 11px;
   outline: none;
 }
 
@@ -692,18 +706,22 @@ body {
 }
 
 /* ============================================
-   SCRATCHPAD PANEL
+   SCRATCHPAD SECTION
    ============================================ */
+
+#scratchpad-section {
+  flex: 1;
+}
 
 #scratchpad-content {
   flex: 1;
-  padding: 12px;
+  padding: 8px;
   background: transparent;
   border: none;
   color: var(--text-primary);
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.4;
   resize: none;
   outline: none;
 }
@@ -989,8 +1007,8 @@ body {
    ============================================ */
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -999,7 +1017,7 @@ body {
 
 ::-webkit-scrollbar-thumb {
   background: var(--border-color);
-  border-radius: 4px;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {

@@ -1,6 +1,6 @@
 // ============================================
 // OUTER RIM - Renderer Application
-// Dual-Pane + Navigation + Bottom Tool Panel
+// Dual-Pane + Navigation + Three-Column Bottom Panel
 // ============================================
 
 function uuidv4() {
@@ -11,7 +11,6 @@ function uuidv4() {
 let workspaces = [];
 let activeWorkspace = null;
 let activePane = 'left';
-let activeBottomPanel = 'files';
 let currentFilesPath = '~';
 let scratchpadContent = '';
 
@@ -539,18 +538,6 @@ function expandNotepad() {
 // BOTTOM PANEL MANAGEMENT
 // ============================================
 
-function switchBottomPanel(panelName) {
-  activeBottomPanel = panelName;
-  
-  document.querySelectorAll('.bottom-tab').forEach(tab => {
-    tab.classList.toggle('active', tab.dataset.panel === panelName);
-  });
-  
-  document.querySelectorAll('.bottom-panel-section').forEach(section => {
-    section.classList.toggle('active', section.id === `${panelName}-panel`);
-  });
-}
-
 function toggleBottomPanel() {
   const isCollapsed = bottomPanel.classList.toggle('collapsed');
   document.getElementById('bottom-panel-toggle').textContent = isCollapsed ? '\u25b2' : '\u25bc';
@@ -565,13 +552,13 @@ async function loadFiles(path) {
   document.getElementById('files-path').value = path;
   
   const filesList = document.getElementById('files-list');
-  filesList.innerHTML = '<div class="file-item"><span class="file-icon">⏳</span><span class="file-name">Loading...</span></div>';
+  filesList.innerHTML = '<div class="file-item"><span class="file-icon">\u23f3</span><span class="file-name">Loading...</span></div>';
   
   try {
     const files = await window.outerRim.files.list(path);
     renderFiles(files);
   } catch (err) {
-    filesList.innerHTML = `<div class="file-item"><span class="file-icon">❌</span><span class="file-name">Error: ${err.message}</span></div>`;
+    filesList.innerHTML = `<div class="file-item"><span class="file-icon">\u274c</span><span class="file-name">Error: ${err.message}</span></div>`;
   }
 }
 
@@ -580,7 +567,7 @@ function renderFiles(files) {
   filesList.innerHTML = '';
   
   if (files.length === 0) {
-    filesList.innerHTML = '<div class="file-item"><span class="file-icon">📭</span><span class="file-name">Empty directory</span></div>';
+    filesList.innerHTML = '<div class="file-item"><span class="file-icon">\ud83d\udced</span><span class="file-name">Empty directory</span></div>';
     return;
   }
   
@@ -595,7 +582,7 @@ function renderFiles(files) {
     const item = document.createElement('div');
     item.className = `file-item ${file.isDirectory ? 'directory' : ''}`;
     
-    const icon = file.isDirectory ? '📁' : getFileIcon(file.name);
+    const icon = file.isDirectory ? '\ud83d\udcc1' : getFileIcon(file.name);
     const size = file.isDirectory ? '' : formatFileSize(file.size);
     
     item.innerHTML = `
@@ -613,13 +600,6 @@ function renderFiles(files) {
       }
     });
     
-    item.addEventListener('dblclick', () => {
-      if (!file.isDirectory) {
-        // Could open file in editor or show preview
-        appendTerminalOutput(`File: ${file.name}`, 'output');
-      }
-    });
-    
     filesList.appendChild(item);
   });
 }
@@ -627,17 +607,17 @@ function renderFiles(files) {
 function getFileIcon(filename) {
   const ext = filename.split('.').pop().toLowerCase();
   const icons = {
-    js: '📜', ts: '📜', jsx: '⚛️', tsx: '⚛️',
-    html: '🌐', css: '🎨', scss: '🎨',
-    json: '📋', md: '📝', txt: '📄',
-    py: '🐍', rb: '💎', go: '🔷',
-    jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', svg: '🖼️',
-    pdf: '📕', doc: '📘', docx: '📘',
-    zip: '📦', tar: '📦', gz: '📦',
-    mp3: '🎵', wav: '🎵', mp4: '🎬', mov: '🎬',
-    sh: '⚙️', bash: '⚙️', zsh: '⚙️',
+    js: '\ud83d\udcdc', ts: '\ud83d\udcdc', jsx: '\u269b\ufe0f', tsx: '\u269b\ufe0f',
+    html: '\ud83c\udf10', css: '\ud83c\udfa8', scss: '\ud83c\udfa8',
+    json: '\ud83d\udccb', md: '\ud83d\udcdd', txt: '\ud83d\udcc4',
+    py: '\ud83d\udc0d', rb: '\ud83d\udc8e', go: '\ud83d\udd37',
+    jpg: '\ud83d\uddbc\ufe0f', jpeg: '\ud83d\uddbc\ufe0f', png: '\ud83d\uddbc\ufe0f', gif: '\ud83d\uddbc\ufe0f', svg: '\ud83d\uddbc\ufe0f',
+    pdf: '\ud83d\udcd5', doc: '\ud83d\udcd8', docx: '\ud83d\udcd8',
+    zip: '\ud83d\udce6', tar: '\ud83d\udce6', gz: '\ud83d\udce6',
+    mp3: '\ud83c\udfb5', wav: '\ud83c\udfb5', mp4: '\ud83c\udfac', mov: '\ud83c\udfac',
+    sh: '\u2699\ufe0f', bash: '\u2699\ufe0f', zsh: '\u2699\ufe0f',
   };
-  return icons[ext] || '📄';
+  return icons[ext] || '\ud83d\udcc4';
 }
 
 function formatFileSize(bytes) {
@@ -839,20 +819,10 @@ function setupEventListeners() {
     });
   });
   
-  // Bottom panel tabs
-  document.querySelectorAll('.bottom-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      switchBottomPanel(tab.dataset.panel);
-    });
-  });
-  
+  // Bottom panel toggle
   document.getElementById('bottom-panel-toggle').addEventListener('click', toggleBottomPanel);
   
   // Files panel
-  document.getElementById('files-go').addEventListener('click', () => {
-    loadFiles(document.getElementById('files-path').value.trim());
-  });
-  
   document.getElementById('files-path').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
       loadFiles(e.target.value.trim());
@@ -921,6 +891,7 @@ function setupEventListeners() {
   setupPaneResizer();
   setupNotepadResizer();
   setupBottomPanelResizer();
+  setupBottomSectionResizers();
   
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 't') {
@@ -1046,7 +1017,7 @@ function setupBottomPanelResizer() {
     const workspaceBarHeight = 42;
     const newHeight = mainRect.bottom - e.clientY - workspaceBarHeight;
     
-    if (newHeight > 100 && newHeight < 400) {
+    if (newHeight > 80 && newHeight < 400) {
       bottomPanel.style.height = newHeight + 'px';
       bottomPanel.classList.remove('collapsed');
       document.getElementById('bottom-panel-toggle').textContent = '\u25bc';
@@ -1056,6 +1027,50 @@ function setupBottomPanelResizer() {
   document.addEventListener('mouseup', () => {
     isResizing = false;
     document.body.style.cursor = '';
+  });
+}
+
+function setupBottomSectionResizers() {
+  const resizers = document.querySelectorAll('.bottom-section-resizer');
+  
+  resizers.forEach(resizer => {
+    let isResizing = false;
+    const resizeType = resizer.dataset.resize;
+    
+    resizer.addEventListener('mousedown', () => {
+      isResizing = true;
+      document.body.style.cursor = 'col-resize';
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+      
+      const content = document.querySelector('.bottom-panel-content');
+      const contentRect = content.getBoundingClientRect();
+      
+      if (resizeType === 'files-terminal') {
+        const filesSection = document.getElementById('files-section');
+        const newWidth = e.clientX - contentRect.left;
+        const percent = (newWidth / contentRect.width) * 100;
+        
+        if (percent > 15 && percent < 50) {
+          filesSection.style.flex = `0 0 ${percent}%`;
+        }
+      } else if (resizeType === 'terminal-scratchpad') {
+        const scratchpadSection = document.getElementById('scratchpad-section');
+        const newWidth = contentRect.right - e.clientX;
+        const percent = (newWidth / contentRect.width) * 100;
+        
+        if (percent > 15 && percent < 50) {
+          scratchpadSection.style.flex = `0 0 ${percent}%`;
+        }
+      }
+    });
+    
+    document.addEventListener('mouseup', () => {
+      isResizing = false;
+      document.body.style.cursor = '';
+    });
   });
 }
 

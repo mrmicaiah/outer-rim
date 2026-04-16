@@ -81,30 +81,35 @@
       <!-- BOTTOM PANEL RESIZER -->
       <div id="bottom-panel-resizer"></div>
 
-      <!-- BOTTOM TOOL PANEL -->
+      <!-- BOTTOM TOOL PANEL - THREE COLUMNS -->
       <div id="bottom-panel">
-        <div class="bottom-panel-tabs">
-          <button class="bottom-tab active" data-panel="files">📁 Files</button>
-          <button class="bottom-tab" data-panel="terminal">💻 Terminal</button>
-          <button class="bottom-tab" data-panel="scratchpad">📝 Scratchpad</button>
-          <div class="bottom-panel-spacer"></div>
+        <div class="bottom-panel-header">
+          <span class="bottom-panel-title">🛠️ Tools</span>
           <button id="bottom-panel-toggle" title="Toggle Panel">▼</button>
         </div>
         
         <div class="bottom-panel-content">
-          <!-- FILES PANEL -->
-          <div class="bottom-panel-section active" id="files-panel">
+          <!-- FILES SECTION -->
+          <div class="bottom-section" id="files-section">
+            <div class="bottom-section-header">
+              <span>📁 Files</span>
+            </div>
             <div class="files-toolbar">
               <input type="text" id="files-path" placeholder="~/" value="~">
-              <button id="files-go" title="Go">→</button>
               <button id="files-up" title="Up">↑</button>
               <button id="files-refresh" title="Refresh">↻</button>
             </div>
             <div id="files-list"></div>
           </div>
 
-          <!-- TERMINAL PANEL -->
-          <div class="bottom-panel-section" id="terminal-panel">
+          <!-- SECTION RESIZER -->
+          <div class="bottom-section-resizer" data-resize="files-terminal"></div>
+
+          <!-- TERMINAL SECTION -->
+          <div class="bottom-section" id="terminal-section">
+            <div class="bottom-section-header">
+              <span>💻 Terminal</span>
+            </div>
             <div id="terminal-output"></div>
             <div class="terminal-input-row">
               <span class="terminal-prompt">$</span>
@@ -112,9 +117,15 @@
             </div>
           </div>
 
-          <!-- SCRATCHPAD PANEL -->
-          <div class="bottom-panel-section" id="scratchpad-panel">
-            <textarea id="scratchpad-content" placeholder="Quick notes, code snippets, temporary text...&#10;&#10;This is separate from workspace notes - use it for temporary stuff."></textarea>
+          <!-- SECTION RESIZER -->
+          <div class="bottom-section-resizer" data-resize="terminal-scratchpad"></div>
+
+          <!-- SCRATCHPAD SECTION -->
+          <div class="bottom-section" id="scratchpad-section">
+            <div class="bottom-section-header">
+              <span>📝 Scratchpad</span>
+            </div>
+            <textarea id="scratchpad-content" placeholder="Quick notes, code snippets, temporary text..."></textarea>
           </div>
         </div>
       </div>
