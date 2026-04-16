@@ -26,12 +26,15 @@
       "output": "dist"
     },
     "files": [
-      "src/**/*",
-      "package.json"
+      "**/*",
+      "!dist/**",
+      "!.git/**",
+      "!*.md"
     ],
+    "extraResources": [],
+    "asar": false,
     "mac": {
-      "category": "public.app-category.productivity",
-      "icon": "assets/icon.icns"
+      "category": "public.app-category.productivity"
     },
     "win": {
       "icon": "assets/icon.ico"
