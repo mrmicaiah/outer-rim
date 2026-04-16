@@ -17,68 +17,107 @@
 
     <!-- Main Content Area -->
     <main id="main-content">
-      <!-- Dual Pane Container -->
-      <div id="dual-pane-container">
-        
-        <!-- LEFT PANE -->
-        <div class="pane" id="left-pane">
-          <header class="pane-tab-bar">
-            <div class="pane-tab-list" data-pane="left"></div>
-            <button class="pane-add-tab" data-pane="left" title="New Tab">+</button>
-          </header>
-          <!-- Navigation Bar -->
-          <div class="pane-nav-bar" data-pane="left">
-            <button class="nav-btn nav-back" data-pane="left" title="Back">◀</button>
-            <button class="nav-btn nav-forward" data-pane="left" title="Forward">▶</button>
-            <button class="nav-btn nav-refresh" data-pane="left" title="Refresh">↻</button>
-            <input type="text" class="nav-url" data-pane="left" placeholder="Enter URL...">
-          </div>
-          <div class="pane-webview-container" data-pane="left">
-            <div class="pane-empty-state">
-              <p>Click + to add a tab</p>
+      <!-- Upper Section: Dual Panes + Notepad -->
+      <div id="upper-section">
+        <div id="dual-pane-container">
+          
+          <!-- LEFT PANE -->
+          <div class="pane" id="left-pane">
+            <header class="pane-tab-bar">
+              <div class="pane-tab-list" data-pane="left"></div>
+              <button class="pane-add-tab" data-pane="left" title="New Tab">+</button>
+            </header>
+            <div class="pane-nav-bar" data-pane="left">
+              <button class="nav-btn nav-back" data-pane="left" title="Back">◀</button>
+              <button class="nav-btn nav-forward" data-pane="left" title="Forward">▶</button>
+              <button class="nav-btn nav-refresh" data-pane="left" title="Refresh">↻</button>
+              <input type="text" class="nav-url" data-pane="left" placeholder="Enter URL...">
+            </div>
+            <div class="pane-webview-container" data-pane="left">
+              <div class="pane-empty-state">
+                <p>Click + to add a tab</p>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- PANE RESIZER -->
-        <div id="pane-resizer"></div>
+          <!-- PANE RESIZER -->
+          <div id="pane-resizer"></div>
 
-        <!-- RIGHT PANE -->
-        <div class="pane" id="right-pane">
-          <header class="pane-tab-bar">
-            <div class="pane-tab-list" data-pane="right"></div>
-            <button class="pane-add-tab" data-pane="right" title="New Tab">+</button>
-          </header>
-          <!-- Navigation Bar -->
-          <div class="pane-nav-bar" data-pane="right">
-            <button class="nav-btn nav-back" data-pane="right" title="Back">◀</button>
-            <button class="nav-btn nav-forward" data-pane="right" title="Forward">▶</button>
-            <button class="nav-btn nav-refresh" data-pane="right" title="Refresh">↻</button>
-            <input type="text" class="nav-url" data-pane="right" placeholder="Enter URL...">
-          </div>
-          <div class="pane-webview-container" data-pane="right">
-            <div class="pane-empty-state">
-              <p>Click + to add a tab</p>
+          <!-- RIGHT PANE -->
+          <div class="pane" id="right-pane">
+            <header class="pane-tab-bar">
+              <div class="pane-tab-list" data-pane="right"></div>
+              <button class="pane-add-tab" data-pane="right" title="New Tab">+</button>
+            </header>
+            <div class="pane-nav-bar" data-pane="right">
+              <button class="nav-btn nav-back" data-pane="right" title="Back">◀</button>
+              <button class="nav-btn nav-forward" data-pane="right" title="Forward">▶</button>
+              <button class="nav-btn nav-refresh" data-pane="right" title="Refresh">↻</button>
+              <input type="text" class="nav-url" data-pane="right" placeholder="Enter URL...">
+            </div>
+            <div class="pane-webview-container" data-pane="right">
+              <div class="pane-empty-state">
+                <p>Click + to add a tab</p>
+              </div>
             </div>
           </div>
+
+          <!-- NOTEPAD RESIZER -->
+          <div id="notepad-resizer"></div>
+
+          <!-- NOTEPAD PANEL -->
+          <aside id="notepad-panel">
+            <div class="notepad-header">
+              <span class="notepad-title">📝 Notes</span>
+              <button id="notepad-toggle" title="Toggle Notepad">◀</button>
+            </div>
+            <textarea id="notepad-content" placeholder="Write your notes here...&#10;&#10;These notes are saved per workspace and persist across sessions."></textarea>
+          </aside>
         </div>
 
-        <!-- NOTEPAD RESIZER (VERTICAL) -->
-        <div id="notepad-resizer"></div>
-
-        <!-- NOTEPAD PANEL (RIGHT SIDE) -->
-        <aside id="notepad-panel">
-          <div class="notepad-header">
-            <span class="notepad-title">📝 Notes</span>
-            <button id="notepad-toggle" title="Toggle Notepad">◀</button>
-          </div>
-          <textarea id="notepad-content" placeholder="Write your notes here...&#10;&#10;These notes are saved per workspace and persist across sessions."></textarea>
-        </aside>
-
+        <button id="notepad-expand" class="hidden" title="Show Notes">📝</button>
       </div>
 
-      <!-- NOTEPAD EXPAND BUTTON (visible when collapsed) -->
-      <button id="notepad-expand" class="hidden" title="Show Notes">📝</button>
+      <!-- BOTTOM PANEL RESIZER -->
+      <div id="bottom-panel-resizer"></div>
+
+      <!-- BOTTOM TOOL PANEL -->
+      <div id="bottom-panel">
+        <div class="bottom-panel-tabs">
+          <button class="bottom-tab active" data-panel="files">📁 Files</button>
+          <button class="bottom-tab" data-panel="terminal">💻 Terminal</button>
+          <button class="bottom-tab" data-panel="scratchpad">📝 Scratchpad</button>
+          <div class="bottom-panel-spacer"></div>
+          <button id="bottom-panel-toggle" title="Toggle Panel">▼</button>
+        </div>
+        
+        <div class="bottom-panel-content">
+          <!-- FILES PANEL -->
+          <div class="bottom-panel-section active" id="files-panel">
+            <div class="files-toolbar">
+              <input type="text" id="files-path" placeholder="~/" value="~">
+              <button id="files-go" title="Go">→</button>
+              <button id="files-up" title="Up">↑</button>
+              <button id="files-refresh" title="Refresh">↻</button>
+            </div>
+            <div id="files-list"></div>
+          </div>
+
+          <!-- TERMINAL PANEL -->
+          <div class="bottom-panel-section" id="terminal-panel">
+            <div id="terminal-output"></div>
+            <div class="terminal-input-row">
+              <span class="terminal-prompt">$</span>
+              <input type="text" id="terminal-input" placeholder="Enter command...">
+            </div>
+          </div>
+
+          <!-- SCRATCHPAD PANEL -->
+          <div class="bottom-panel-section" id="scratchpad-panel">
+            <textarea id="scratchpad-content" placeholder="Quick notes, code snippets, temporary text...&#10;&#10;This is separate from workspace notes - use it for temporary stuff."></textarea>
+          </div>
+        </div>
+      </div>
 
       <!-- WORKSPACE BAR (BOTTOM) -->
       <footer id="workspace-bar">
@@ -88,7 +127,7 @@
     </main>
   </div>
 
-  <!-- Empty State Overlay (shown when no workspace) -->
+  <!-- Empty State Overlay -->
   <div id="empty-state-overlay">
     <div class="empty-icon">◐</div>
     <h2>Welcome to Outer Rim</h2>
