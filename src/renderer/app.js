@@ -1,6 +1,6 @@
 // ============================================
 // OUTER RIM - Renderer Application
-// With Screenshots Panel
+// With Browser Features: Copy/Paste, DevTools, Context Menu
 // ============================================
 
 function uuidv4() {
@@ -58,6 +58,144 @@ async function init() {
     console.log('New screenshot:', filename);
     loadScreenshots();
   });
+  
+  // Listen for menu events
+  window.outerRim.onMenuToggleDevTools(() => {
+    toggleActiveWebviewDevTools();
+  });
+}
+
+// ============================================
+// WEBVIEW DEVTOOLS & CONTEXT MENU
+// ============================================
+
+function toggleActiveWebviewDevTools() {
+  if (!activeWorkspace) return;
+  const pane = activeWorkspace.panes[activePane];
+  if (!pane || !pane.activeTabId) return;
+  
+  const webview = document.getElementById(`webview-${activePane}-${pane.activeTabId}`);
+  if (webview) {
+    if (webview.isDevToolsOpened()) {
+      webview.closeDevTools();
+    } else {
+      webview.openDevTools();
+    }
+  }
+}
+
+function setupWebviewContextMenu(webview, paneName) {
+  webview.addEventListener('context-menu', (e) => {
+    e.preventDefault();
+    const params = e.params;
+    
+    const hasSelection = params.selectionText && params.selectionText.length > 0;
+    const isEditable = params.isEditable;
+    const hasLink = params.linkURL && params.linkURL.length > 0;
+    
+    let menuItems = [];
+    
+    if (hasLink) {
+      menuItems.push({ label: 'Open Link in New Tab', action: () => createTab(paneName, params.linkURL) });
+      menuItems.push({ label: 'Copy Link', action: () => navigator.clipboard.writeText(params.linkURL) });
+      menuItems.push({ type: 'separator' });
+    }
+    
+    if (hasSelection) {
+      menuItems.push({ label: 'Copy', action: () => webview.copy() });
+    }
+    
+    if (isEditable) {
+      menuItems.push({ label: 'Cut', action: () => webview.cut() });
+      menuItems.push({ label: 'Paste', action: () => webview.paste() });
+      menuItems.push({ label: 'Select All', action: () => webview.selectAll() });
+    }
+    
+    if (menuItems.length > 0) {
+      menuItems.push({ type: 'separator' });
+    }
+    
+    menuItems.push({ label: 'Back', action: () => webview.goBack(), disabled: !webview.canGoBack() });
+    menuItems.push({ label: 'Forward', action: () => webview.goForward(), disabled: !webview.canGoForward() });
+    menuItems.push({ label: 'Reload', action: () => webview.reload() });
+    menuItems.push({ type: 'separator' });
+    menuItems.push({ label: 'Inspect Element', action: () => webview.inspectElement(params.x, params.y) });
+    
+    showContextMenu(params.x, params.y, menuItems);
+  });
+}
+
+function showContextMenu(x, y, items) {
+  // Remove existing context menu
+  const existing = document.getElementById('context-menu');
+  if (existing) existing.remove();
+  
+  const menu = document.createElement('div');
+  menu.id = 'context-menu';
+  menu.style.cssText = `
+    position: fixed;
+    left: ${x}px;
+    top: ${y}px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 4px 0;
+    min-width: 180px;
+    z-index: 10000;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  `;
+  
+  items.forEach(item => {
+    if (item.type === 'separator') {
+      const sep = document.createElement('div');
+      sep.style.cssText = 'height: 1px; background: var(--border-color); margin: 4px 0;';
+      menu.appendChild(sep);
+    } else {
+      const btn = document.createElement('button');
+      btn.textContent = item.label;
+      btn.disabled = item.disabled;
+      btn.style.cssText = `
+        display: block;
+        width: 100%;
+        padding: 8px 16px;
+        background: none;
+        border: none;
+        color: ${item.disabled ? 'var(--text-muted)' : 'var(--text-primary)'};
+        font-size: 13px;
+        text-align: left;
+        cursor: ${item.disabled ? 'default' : 'pointer'};
+      `;
+      if (!item.disabled) {
+        btn.addEventListener('mouseenter', () => btn.style.background = 'var(--bg-hover)');
+        btn.addEventListener('mouseleave', () => btn.style.background = 'none');
+        btn.addEventListener('click', () => {
+          item.action();
+          menu.remove();
+        });
+      }
+      menu.appendChild(btn);
+    }
+  });
+  
+  document.body.appendChild(menu);
+  
+  // Adjust position if off screen
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) {
+    menu.style.left = (window.innerWidth - rect.width - 10) + 'px';
+  }
+  if (rect.bottom > window.innerHeight) {
+    menu.style.top = (window.innerHeight - rect.height - 10) + 'px';
+  }
+  
+  // Close on click outside
+  const closeMenu = (e) => {
+    if (!menu.contains(e.target)) {
+      menu.remove();
+      document.removeEventListener('click', closeMenu);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', closeMenu), 0);
 }
 
 // ============================================
@@ -294,6 +432,13 @@ function renderPane(paneName) {
     webview.src = tab.url;
     webview.className = pane.activeTabId === tab.id ? 'active' : '';
     webview.setAttribute('partition', 'persist:outerrim');
+    webview.setAttribute('allowpopups', 'true');
+    
+    // Enable all web features
+    webview.addEventListener('dom-ready', () => {
+      // Set up context menu for this webview
+      setupWebviewContextMenu(webview, paneName);
+    });
     
     webview.addEventListener('page-title-updated', (e) => {
       updateTabTitle(paneName, tab.id, e.title);
@@ -309,6 +454,17 @@ function renderPane(paneName) {
         updateTabUrl(paneName, tab.id, e.url);
         updateNavBar(paneName);
       }
+    });
+    
+    // Handle new window requests (open in new tab)
+    webview.addEventListener('new-window', (e) => {
+      e.preventDefault();
+      createTab(paneName, e.url);
+    });
+    
+    // Track which pane is active based on clicks
+    webview.addEventListener('focus', () => {
+      activePane = paneName;
     });
     
     webviewContainer.appendChild(webview);
@@ -590,7 +746,6 @@ function renderScreenshots(screenshots) {
       openScreenshotPreview(screenshot.path);
     });
     
-    // Enable drag to other apps
     item.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('text/uri-list', `file://${screenshot.path}`);
       e.dataTransfer.setData('text/plain', screenshot.path);
@@ -630,7 +785,6 @@ async function copyScreenshotToClipboard() {
   
   const success = await window.outerRim.screenshots.copy(filepath);
   if (success) {
-    // Brief visual feedback
     const btn = document.getElementById('screenshot-copy');
     btn.textContent = 'Copied!';
     setTimeout(() => {
@@ -958,6 +1112,10 @@ function setupEventListeners() {
     if ((e.metaKey || e.ctrlKey) && e.key === '`') {
       e.preventDefault();
       toggleBottomPanel();
+    }
+    if (e.key === 'F12') {
+      e.preventDefault();
+      toggleActiveWebviewDevTools();
     }
     if (e.key === 'Escape') {
       closeWorkspaceModal();
