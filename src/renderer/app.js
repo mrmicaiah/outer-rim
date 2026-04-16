@@ -13,6 +13,9 @@ let activeWorkspace = null;
 let activePane = 'left';
 let scratchpadContent = '';
 
+// Resizer state - global to ensure proper cleanup
+let currentResizer = null;
+
 // DOM Elements
 const workspaceList = document.getElementById('workspace-list');
 const notepadContent = document.getElementById('notepad-content');
@@ -63,6 +66,79 @@ async function init() {
   window.outerRim.onMenuToggleDevTools(() => {
     toggleActiveWebviewDevTools();
   });
+  
+  // Global mouseup handler for all resizers
+  document.addEventListener('mouseup', handleGlobalMouseUp);
+  document.addEventListener('mousemove', handleGlobalMouseMove);
+}
+
+// ============================================
+// GLOBAL RESIZE HANDLERS
+// ============================================
+
+function handleGlobalMouseUp() {
+  if (currentResizer) {
+    currentResizer = null;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }
+}
+
+function handleGlobalMouseMove(e) {
+  if (!currentResizer) return;
+  
+  const { type, startX, startY, startLeftWidth, startRightWidth, startWidth, startHeight } = currentResizer;
+  
+  if (type === 'pane') {
+    const leftPane = document.getElementById('left-pane');
+    const rightPane = document.getElementById('right-pane');
+    const delta = e.clientX - startX;
+    const newLeftWidth = startLeftWidth + delta;
+    const newRightWidth = startRightWidth - delta;
+    
+    if (newLeftWidth >= 200 && newRightWidth >= 200) {
+      leftPane.style.width = newLeftWidth + 'px';
+      leftPane.style.flex = 'none';
+      rightPane.style.width = newRightWidth + 'px';
+      rightPane.style.flex = 'none';
+    }
+  } else if (type === 'notepad') {
+    const delta = startX - e.clientX;
+    const newWidth = startWidth + delta;
+    
+    if (newWidth >= 150 && newWidth <= 500) {
+      notepadPanel.style.width = newWidth + 'px';
+    }
+  } else if (type === 'bottom') {
+    const delta = startY - e.clientY;
+    const newHeight = startHeight + delta;
+    
+    if (newHeight >= 80 && newHeight <= 400) {
+      bottomPanel.style.height = newHeight + 'px';
+      bottomPanel.classList.remove('collapsed');
+      document.getElementById('bottom-panel-toggle').textContent = '▼';
+    }
+  } else if (type === 'screenshots-terminal') {
+    const content = document.querySelector('.bottom-panel-content');
+    const contentRect = content.getBoundingClientRect();
+    const screenshotsSection = document.getElementById('screenshots-section');
+    const newWidth = e.clientX - contentRect.left;
+    const percent = (newWidth / contentRect.width) * 100;
+    
+    if (percent > 15 && percent < 60) {
+      screenshotsSection.style.flex = `0 0 ${percent}%`;
+    }
+  } else if (type === 'terminal-scratchpad') {
+    const content = document.querySelector('.bottom-panel-content');
+    const contentRect = content.getBoundingClientRect();
+    const scratchpadSection = document.getElementById('scratchpad-section');
+    const newWidth = contentRect.right - e.clientX;
+    const percent = (newWidth / contentRect.width) * 100;
+    
+    if (percent > 15 && percent < 50) {
+      scratchpadSection.style.flex = `0 0 ${percent}%`;
+    }
+  }
 }
 
 // ============================================
@@ -126,7 +202,6 @@ function setupWebviewContextMenu(webview, paneName) {
 }
 
 function showContextMenu(x, y, items) {
-  // Remove existing context menu
   const existing = document.getElementById('context-menu');
   if (existing) existing.remove();
   
@@ -179,7 +254,6 @@ function showContextMenu(x, y, items) {
   
   document.body.appendChild(menu);
   
-  // Adjust position if off screen
   const rect = menu.getBoundingClientRect();
   if (rect.right > window.innerWidth) {
     menu.style.left = (window.innerWidth - rect.width - 10) + 'px';
@@ -188,7 +262,6 @@ function showContextMenu(x, y, items) {
     menu.style.top = (window.innerHeight - rect.height - 10) + 'px';
   }
   
-  // Close on click outside
   const closeMenu = (e) => {
     if (!menu.contains(e.target)) {
       menu.remove();
@@ -434,9 +507,7 @@ function renderPane(paneName) {
     webview.setAttribute('partition', 'persist:outerrim');
     webview.setAttribute('allowpopups', 'true');
     
-    // Enable all web features
     webview.addEventListener('dom-ready', () => {
-      // Set up context menu for this webview
       setupWebviewContextMenu(webview, paneName);
     });
     
@@ -456,13 +527,11 @@ function renderPane(paneName) {
       }
     });
     
-    // Handle new window requests (open in new tab)
     webview.addEventListener('new-window', (e) => {
       e.preventDefault();
       createTab(paneName, e.url);
     });
     
-    // Track which pane is active based on clicks
     webview.addEventListener('focus', () => {
       activePane = paneName;
     });
@@ -974,7 +1043,6 @@ function setupEventListeners() {
     });
   });
   
-  // Navigation bar buttons
   document.querySelectorAll('.nav-back').forEach(btn => {
     btn.addEventListener('click', () => navigateBack(btn.dataset.pane));
   });
@@ -996,14 +1064,11 @@ function setupEventListeners() {
     });
   });
   
-  // Bottom panel toggle
   document.getElementById('bottom-panel-toggle').addEventListener('click', toggleBottomPanel);
   
-  // Screenshots panel
   document.getElementById('screenshots-refresh').addEventListener('click', loadScreenshots);
   document.getElementById('screenshots-delete-all').addEventListener('click', deleteAllScreenshots);
   
-  // Screenshot preview
   document.getElementById('screenshot-preview-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'screenshot-preview-overlay') {
       closeScreenshotPreview();
@@ -1013,7 +1078,6 @@ function setupEventListeners() {
   document.getElementById('screenshot-delete').addEventListener('click', deleteCurrentScreenshot);
   document.getElementById('screenshot-close').addEventListener('click', closeScreenshotPreview);
   
-  // Terminal panel
   document.getElementById('terminal-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       runTerminalCommand(e.target.value);
@@ -1035,10 +1099,8 @@ function setupEventListeners() {
     }
   });
   
-  // Scratchpad panel
   document.getElementById('scratchpad-content').addEventListener('input', saveScratchpad);
   
-  // Workspace modal
   document.getElementById('modal-cancel').addEventListener('click', closeWorkspaceModal);
   document.getElementById('modal-confirm').addEventListener('click', confirmWorkspaceModal);
   modalOverlay.addEventListener('click', (e) => {
@@ -1048,7 +1110,6 @@ function setupEventListeners() {
     if (e.key === 'Enter') confirmWorkspaceModal();
   });
   
-  // Tab modal
   document.getElementById('tab-modal-cancel').addEventListener('click', closeTabModal);
   document.getElementById('tab-modal-confirm').addEventListener('click', confirmTabModal);
   tabModalOverlay.addEventListener('click', (e) => {
@@ -1069,10 +1130,7 @@ function setupEventListeners() {
   notepadToggle.addEventListener('click', toggleNotepad);
   notepadExpand.addEventListener('click', expandNotepad);
   
-  setupPaneResizer();
-  setupNotepadResizer();
-  setupBottomPanelResizer();
-  setupBottomSectionResizers();
+  setupResizers();
   
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 't') {
@@ -1125,164 +1183,55 @@ function setupEventListeners() {
   });
 }
 
-function setupPaneResizer() {
-  const resizer = document.getElementById('pane-resizer');
-  const leftPane = document.getElementById('left-pane');
-  const rightPane = document.getElementById('right-pane');
-  let isResizing = false;
-  let startX = 0;
-  let startLeftWidth = 0;
-  let startRightWidth = 0;
-  
-  resizer.addEventListener('mousedown', (e) => {
-    isResizing = true;
-    startX = e.clientX;
-    startLeftWidth = leftPane.offsetWidth;
-    startRightWidth = rightPane.offsetWidth;
+function setupResizers() {
+  // Pane resizer
+  const paneResizer = document.getElementById('pane-resizer');
+  paneResizer.addEventListener('mousedown', (e) => {
+    const leftPane = document.getElementById('left-pane');
+    const rightPane = document.getElementById('right-pane');
+    currentResizer = {
+      type: 'pane',
+      startX: e.clientX,
+      startLeftWidth: leftPane.offsetWidth,
+      startRightWidth: rightPane.offsetWidth
+    };
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
   });
   
-  document.addEventListener('mousemove', (e) => {
-    if (!isResizing) return;
-    
-    const delta = e.clientX - startX;
-    const totalWidth = startLeftWidth + startRightWidth;
-    const newLeftWidth = startLeftWidth + delta;
-    const newRightWidth = startRightWidth - delta;
-    
-    // Ensure minimum widths
-    if (newLeftWidth >= 200 && newRightWidth >= 200) {
-      leftPane.style.width = newLeftWidth + 'px';
-      leftPane.style.flex = 'none';
-      rightPane.style.width = newRightWidth + 'px';
-      rightPane.style.flex = 'none';
-    }
-  });
-  
-  document.addEventListener('mouseup', () => {
-    if (isResizing) {
-      isResizing = false;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    }
-  });
-}
-
-function setupNotepadResizer() {
-  const resizer = document.getElementById('notepad-resizer');
-  let isResizing = false;
-  let startX = 0;
-  let startWidth = 0;
-  
-  resizer.addEventListener('mousedown', (e) => {
-    isResizing = true;
-    startX = e.clientX;
-    startWidth = notepadPanel.offsetWidth;
+  // Notepad resizer
+  const notepadResizer = document.getElementById('notepad-resizer');
+  notepadResizer.addEventListener('mousedown', (e) => {
+    currentResizer = {
+      type: 'notepad',
+      startX: e.clientX,
+      startWidth: notepadPanel.offsetWidth
+    };
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
   });
   
-  document.addEventListener('mousemove', (e) => {
-    if (!isResizing) return;
-    
-    const delta = startX - e.clientX;
-    const newWidth = startWidth + delta;
-    
-    if (newWidth >= 150 && newWidth <= 500) {
-      notepadPanel.style.width = newWidth + 'px';
-    }
-  });
-  
-  document.addEventListener('mouseup', () => {
-    if (isResizing) {
-      isResizing = false;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    }
-  });
-}
-
-function setupBottomPanelResizer() {
-  const resizer = document.getElementById('bottom-panel-resizer');
-  let isResizing = false;
-  let startY = 0;
-  let startHeight = 0;
-  
-  resizer.addEventListener('mousedown', (e) => {
-    isResizing = true;
-    startY = e.clientY;
-    startHeight = bottomPanel.offsetHeight;
+  // Bottom panel resizer
+  const bottomResizer = document.getElementById('bottom-panel-resizer');
+  bottomResizer.addEventListener('mousedown', (e) => {
+    currentResizer = {
+      type: 'bottom',
+      startY: e.clientY,
+      startHeight: bottomPanel.offsetHeight
+    };
     document.body.style.cursor = 'row-resize';
     document.body.style.userSelect = 'none';
   });
   
-  document.addEventListener('mousemove', (e) => {
-    if (!isResizing) return;
-    
-    const delta = startY - e.clientY;
-    const newHeight = startHeight + delta;
-    
-    if (newHeight >= 80 && newHeight <= 400) {
-      bottomPanel.style.height = newHeight + 'px';
-      bottomPanel.classList.remove('collapsed');
-      document.getElementById('bottom-panel-toggle').textContent = '▼';
-    }
-  });
-  
-  document.addEventListener('mouseup', () => {
-    if (isResizing) {
-      isResizing = false;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    }
-  });
-}
-
-function setupBottomSectionResizers() {
-  const resizers = document.querySelectorAll('.bottom-section-resizer');
-  
-  resizers.forEach(resizer => {
-    let isResizing = false;
-    const resizeType = resizer.dataset.resize;
-    
-    resizer.addEventListener('mousedown', () => {
-      isResizing = true;
+  // Bottom section resizers
+  document.querySelectorAll('.bottom-section-resizer').forEach(resizer => {
+    resizer.addEventListener('mousedown', (e) => {
+      currentResizer = {
+        type: resizer.dataset.resize,
+        startX: e.clientX
+      };
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
-    });
-    
-    document.addEventListener('mousemove', (e) => {
-      if (!isResizing) return;
-      
-      const content = document.querySelector('.bottom-panel-content');
-      const contentRect = content.getBoundingClientRect();
-      
-      if (resizeType === 'screenshots-terminal') {
-        const screenshotsSection = document.getElementById('screenshots-section');
-        const newWidth = e.clientX - contentRect.left;
-        const percent = (newWidth / contentRect.width) * 100;
-        
-        if (percent > 15 && percent < 60) {
-          screenshotsSection.style.flex = `0 0 ${percent}%`;
-        }
-      } else if (resizeType === 'terminal-scratchpad') {
-        const scratchpadSection = document.getElementById('scratchpad-section');
-        const newWidth = contentRect.right - e.clientX;
-        const percent = (newWidth / contentRect.width) * 100;
-        
-        if (percent > 15 && percent < 50) {
-          scratchpadSection.style.flex = `0 0 ${percent}%`;
-        }
-      }
-    });
-    
-    document.addEventListener('mouseup', () => {
-      if (isResizing) {
-        isResizing = false;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-      }
     });
   });
 }
