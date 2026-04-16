@@ -99,7 +99,7 @@ function simplifyTitle(title, url) {
     }
   }
   
-  const separators = [' | ', ' - ', ' \u2014 ', ' \u00b7 ', ': '];
+  const separators = [' | ', ' - ', ' — ', ' · ', ': '];
   for (const sep of separators) {
     if (title.includes(sep)) {
       const parts = title.split(sep);
@@ -639,6 +639,28 @@ async function copyScreenshotToClipboard() {
   }
 }
 
+async function deleteCurrentScreenshot() {
+  const img = document.getElementById('screenshot-preview-img');
+  const filepath = img.dataset.path;
+  
+  if (!confirm('Delete this screenshot?')) return;
+  
+  const success = await window.outerRim.screenshots.delete(filepath);
+  if (success) {
+    closeScreenshotPreview();
+    loadScreenshots();
+  }
+}
+
+async function deleteAllScreenshots() {
+  if (!confirm('Delete ALL screenshots? This cannot be undone.')) return;
+  
+  const success = await window.outerRim.screenshots.deleteAll();
+  if (success) {
+    loadScreenshots();
+  }
+}
+
 // ============================================
 // TERMINAL PANEL
 // ============================================
@@ -825,6 +847,7 @@ function setupEventListeners() {
   
   // Screenshots panel
   document.getElementById('screenshots-refresh').addEventListener('click', loadScreenshots);
+  document.getElementById('screenshots-delete-all').addEventListener('click', deleteAllScreenshots);
   
   // Screenshot preview
   document.getElementById('screenshot-preview-overlay').addEventListener('click', (e) => {
@@ -833,6 +856,7 @@ function setupEventListeners() {
     }
   });
   document.getElementById('screenshot-copy').addEventListener('click', copyScreenshotToClipboard);
+  document.getElementById('screenshot-delete').addEventListener('click', deleteCurrentScreenshot);
   document.getElementById('screenshot-close').addEventListener('click', closeScreenshotPreview);
   
   // Terminal panel

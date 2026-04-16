@@ -16,6 +16,7 @@
   --accent-hover: #8f71f7;
   --accent-dim: #4a3a8a;
   --danger: #e55561;
+  --danger-hover: #f06670;
   --success: #6bbd6e;
   --title-bar-height: 32px;
   --notepad-width: 280px;
@@ -540,6 +541,11 @@ body {
   flex-shrink: 0;
 }
 
+.bottom-section-actions {
+  display: flex;
+  gap: 4px;
+}
+
 .bottom-section-header button {
   background: none;
   border: none;
@@ -553,6 +559,15 @@ body {
 .bottom-section-header button:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.bottom-section-header button.danger-btn {
+  color: var(--danger);
+}
+
+.bottom-section-header button.danger-btn:hover {
+  background: var(--danger);
+  color: white;
 }
 
 .bottom-section-resizer {
@@ -1037,6 +1052,21 @@ body {
 
 .btn-primary:hover {
   background: var(--accent-hover);
+}
+
+.btn-danger {
+  padding: 10px 20px;
+  background: var(--danger);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.btn-danger:hover {
+  background: var(--danger-hover);
 }
 
 /* ============================================

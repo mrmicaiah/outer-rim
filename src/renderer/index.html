@@ -93,7 +93,10 @@
           <div class="bottom-section" id="screenshots-section">
             <div class="bottom-section-header">
               <span>📸 Screenshots</span>
-              <button id="screenshots-refresh" title="Refresh">↻</button>
+              <div class="bottom-section-actions">
+                <button id="screenshots-delete-all" class="danger-btn" title="Delete All">🗑️ Clear</button>
+                <button id="screenshots-refresh" title="Refresh">↻</button>
+              </div>
             </div>
             <div id="screenshots-list"></div>
           </div>
@@ -148,6 +151,7 @@
       <img id="screenshot-preview-img" src="" alt="Screenshot preview">
       <div class="screenshot-preview-actions">
         <button id="screenshot-copy" class="btn-primary">Copy to Clipboard</button>
+        <button id="screenshot-delete" class="btn-danger">Delete</button>
         <button id="screenshot-close" class="btn-secondary">Close</button>
       </div>
     </div>

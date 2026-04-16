@@ -192,6 +192,38 @@ ipcMain.handle('screenshots:copy', async (event, filepath) => {
   }
 });
 
+ipcMain.handle('screenshots:delete', async (event, filepath) => {
+  try {
+    await fs.promises.unlink(filepath);
+    return true;
+  } catch (err) {
+    console.error('Error deleting screenshot:', err);
+    return false;
+  }
+});
+
+ipcMain.handle('screenshots:deleteAll', async () => {
+  try {
+    if (!fs.existsSync(SCREENSHOTS_PATH)) {
+      return true;
+    }
+    
+    const files = await fs.promises.readdir(SCREENSHOTS_PATH);
+    const imageFiles = files.filter(f => /\.(png|jpg|jpeg|gif)$/i.test(f));
+    
+    await Promise.all(
+      imageFiles.map(filename => 
+        fs.promises.unlink(path.join(SCREENSHOTS_PATH, filename))
+      )
+    );
+    
+    return true;
+  } catch (err) {
+    console.error('Error deleting all screenshots:', err);
+    return false;
+  }
+});
+
 ipcMain.handle('screenshots:getPath', () => {
   return SCREENSHOTS_PATH;
 });

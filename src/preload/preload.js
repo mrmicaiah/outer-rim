@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('outerRim', {
   screenshots: {
     list: () => ipcRenderer.invoke('screenshots:list'),
     copy: (filepath) => ipcRenderer.invoke('screenshots:copy', filepath),
+    delete: (filepath) => ipcRenderer.invoke('screenshots:delete', filepath),
+    deleteAll: () => ipcRenderer.invoke('screenshots:deleteAll'),
     getPath: () => ipcRenderer.invoke('screenshots:getPath'),
     onNew: (callback) => ipcRenderer.on('screenshot:new', (event, filename) => callback(filename)),
   },
