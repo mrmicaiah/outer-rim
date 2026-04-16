@@ -21,6 +21,7 @@
   --notepad-width: 280px;
   --workspace-bar-height: 42px;
   --pane-tab-height: 36px;
+  --pane-nav-height: 32px;
   --transition: 150ms ease;
 }
 
@@ -50,7 +51,7 @@ body {
 
 #title-bar {
   height: var(--title-bar-height);
-  background: #c0392b; /* Red so you can see it - change later */
+  background: #c0392b;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -76,7 +77,6 @@ body {
   pointer-events: none;
 }
 
-/* Traffic light spacing for Mac */
 #title-bar::before {
   content: '';
   width: 70px;
@@ -197,36 +197,13 @@ body {
   color: var(--text-primary);
 }
 
-.pane-tab-refresh {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 2px 4px;
-  margin-left: 2px;
-  border-radius: 4px;
-  font-size: 11px;
-  opacity: 0;
-  transition: opacity var(--transition);
-  flex-shrink: 0;
-}
-
-.pane-tab-item:hover .pane-tab-refresh {
-  opacity: 1;
-}
-
-.pane-tab-refresh:hover {
-  background: var(--bg-hover);
-  color: var(--accent);
-}
-
 .pane-tab-close {
   background: none;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
   padding: 2px 4px;
-  margin-left: 2px;
+  margin-left: 4px;
   border-radius: 4px;
   font-size: 12px;
   opacity: 0;
@@ -259,6 +236,71 @@ body {
 }
 
 /* ============================================
+   PANE NAVIGATION BAR
+   ============================================ */
+
+.pane-nav-bar {
+  height: var(--pane-nav-height);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  gap: 4px;
+}
+
+.pane-nav-bar.hidden {
+  display: none;
+}
+
+.nav-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  transition: all var(--transition);
+}
+
+.nav-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.nav-btn:active:not(:disabled) {
+  background: var(--bg-tertiary);
+}
+
+.nav-url {
+  flex: 1;
+  height: 24px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 0 8px;
+  outline: none;
+  transition: all var(--transition);
+}
+
+.nav-url:focus {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.nav-url::placeholder {
+  color: var(--text-muted);
+}
+
+/* ============================================
    PANE WEBVIEW CONTAINERS
    ============================================ */
 
@@ -266,6 +308,7 @@ body {
   flex: 1;
   position: relative;
   background: var(--bg-primary);
+  overflow: hidden;
 }
 
 .pane-webview-container webview {
@@ -376,7 +419,6 @@ body {
   color: var(--text-muted);
 }
 
-/* Expand button when notepad is collapsed */
 #notepad-expand {
   position: absolute;
   right: 12px;

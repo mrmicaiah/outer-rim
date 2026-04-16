@@ -1,9 +1,8 @@
 // ============================================
 // OUTER RIM - Renderer Application
-// Dual-Pane + Bottom Workspace Bar
+// Dual-Pane + Navigation Bar + Bottom Workspace Bar
 // ============================================
 
-// Browser-native UUID generator
 function uuidv4() {
   return crypto.randomUUID();
 }
@@ -53,25 +52,15 @@ async function init() {
 function simplifyTitle(title, url) {
   if (!title || title === 'Loading...') return title || 'New Tab';
   
-  // Try to extract site name from URL as fallback
   let siteName = '';
   try {
     const hostname = new URL(url).hostname;
-    // Remove www. and get the main domain part
     siteName = hostname.replace(/^www\./, '').split('.')[0];
-    // Capitalize first letter
     siteName = siteName.charAt(0).toUpperCase() + siteName.slice(1);
   } catch (e) {
     siteName = '';
   }
   
-  // Common patterns to simplify
-  // "Cloudflare Dashboard | Overview | example.com" -> "Cloudflare"
-  // "GitHub - user/repo: description" -> "GitHub"
-  // "Google Docs - Document Name" -> "Google Docs"
-  // "Claude" -> "Claude"
-  
-  // If title starts with a known brand, use that
   const knownBrands = [
     'Claude', 'GitHub', 'Google', 'Cloudflare', 'Vercel', 'Netlify', 
     'AWS', 'Azure', 'Firebase', 'Supabase', 'Discord', 'Slack',
@@ -84,7 +73,6 @@ function simplifyTitle(title, url) {
     if (title.toLowerCase().startsWith(brand.toLowerCase())) {
       return brand;
     }
-    // Also check if brand appears after common separators
     const patterns = [
       new RegExp(`^${brand}\\s*[-|:]`, 'i'),
       new RegExp(`[-|:]\\s*${brand}$`, 'i'),
@@ -96,36 +84,30 @@ function simplifyTitle(title, url) {
     }
   }
   
-  // If title contains separator, take the first meaningful part
-  const separators = [' | ', ' - ', ' — ', ' · ', ': '];
+  const separators = [' | ', ' - ', ' \u2014 ', ' \u00b7 ', ': '];
   for (const sep of separators) {
     if (title.includes(sep)) {
       const parts = title.split(sep);
-      // Return the shortest part that's at least 2 chars (likely the brand/site name)
       const shortPart = parts
         .filter(p => p.trim().length >= 2)
         .sort((a, b) => a.length - b.length)[0];
       if (shortPart && shortPart.length <= 20) {
         return shortPart.trim();
       }
-      // Otherwise return first part if it's reasonable length
       if (parts[0].trim().length <= 25) {
         return parts[0].trim();
       }
     }
   }
   
-  // If title is short enough, use it as-is
   if (title.length <= 20) {
     return title;
   }
   
-  // Fall back to site name from URL if we have it
   if (siteName && siteName.length > 1) {
     return siteName;
   }
   
-  // Last resort: truncate
   return title.substring(0, 18) + '...';
 }
 
@@ -144,8 +126,8 @@ function renderWorkspaces() {
     item.innerHTML = `
       <span class="workspace-name">${escapeHtml(workspace.name)}</span>
       <div class="workspace-actions">
-        <button class="workspace-action-btn edit" title="Rename">✎</button>
-        <button class="workspace-action-btn delete" title="Delete">×</button>
+        <button class="workspace-action-btn edit" title="Rename">\u270e</button>
+        <button class="workspace-action-btn delete" title="Delete">\u00d7</button>
       </div>
     `;
     
@@ -236,16 +218,17 @@ function renderPanes() {
 function renderPane(paneName) {
   const tabList = document.querySelector(`.pane-tab-list[data-pane="${paneName}"]`);
   const webviewContainer = document.querySelector(`.pane-webview-container[data-pane="${paneName}"]`);
+  const navBar = document.querySelector(`.pane-nav-bar[data-pane="${paneName}"]`);
   
   tabList.innerHTML = '';
   webviewContainer.querySelectorAll('webview').forEach(wv => wv.remove());
   
   if (!activeWorkspace) {
     webviewContainer.querySelector('.pane-empty-state').style.display = 'block';
+    navBar.classList.add('hidden');
     return;
   }
   
-  // Migrate old workspace format if needed
   if (!activeWorkspace.panes) {
     activeWorkspace.panes = {
       left: { tabs: activeWorkspace.tabs || [], activeTabId: activeWorkspace.activeTabId || null },
@@ -259,10 +242,11 @@ function renderPane(paneName) {
   const pane = activeWorkspace.panes[paneName];
   
   const emptyState = webviewContainer.querySelector('.pane-empty-state');
-  emptyState.style.display = pane.tabs.length === 0 ? 'block' : 'none';
+  const hasTabs = pane.tabs.length > 0;
+  emptyState.style.display = hasTabs ? 'none' : 'block';
+  navBar.classList.toggle('hidden', !hasTabs);
   
   pane.tabs.forEach(tab => {
-    // Tab item
     const item = document.createElement('div');
     item.className = `pane-tab-item ${pane.activeTabId === tab.id ? 'active' : ''}`;
     item.dataset.id = tab.id;
@@ -274,20 +258,13 @@ function renderPane(paneName) {
     item.innerHTML = `
       <img class="pane-tab-favicon" src="${favicon}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><rect fill=%22%23666%22 width=%2216%22 height=%2216%22 rx=%222%22/></svg>'">
       <span class="pane-tab-title" title="${escapeHtml(tab.title || '')}">${escapeHtml(displayTitle)}</span>
-      <button class="pane-tab-refresh" title="Refresh">↻</button>
-      <button class="pane-tab-close" title="Close tab">×</button>
+      <button class="pane-tab-close" title="Close tab">\u00d7</button>
     `;
     
     item.addEventListener('click', (e) => {
-      if (!e.target.classList.contains('pane-tab-close') && 
-          !e.target.classList.contains('pane-tab-refresh')) {
+      if (!e.target.classList.contains('pane-tab-close')) {
         switchTab(paneName, tab.id);
       }
-    });
-    
-    item.querySelector('.pane-tab-refresh').addEventListener('click', (e) => {
-      e.stopPropagation();
-      refreshTab(paneName, tab.id);
     });
     
     item.querySelector('.pane-tab-close').addEventListener('click', (e) => {
@@ -297,13 +274,10 @@ function renderPane(paneName) {
     
     tabList.appendChild(item);
     
-    // Webview with session persistence
     const webview = document.createElement('webview');
     webview.id = `webview-${paneName}-${tab.id}`;
     webview.src = tab.url;
     webview.className = pane.activeTabId === tab.id ? 'active' : '';
-    
-    // Enable session persistence - this keeps you logged in!
     webview.setAttribute('partition', 'persist:outerrim');
     
     webview.addEventListener('page-title-updated', (e) => {
@@ -312,16 +286,47 @@ function renderPane(paneName) {
     
     webview.addEventListener('did-navigate', (e) => {
       updateTabUrl(paneName, tab.id, e.url);
+      updateNavBar(paneName);
     });
     
     webview.addEventListener('did-navigate-in-page', (e) => {
       if (e.isMainFrame) {
         updateTabUrl(paneName, tab.id, e.url);
+        updateNavBar(paneName);
       }
     });
     
     webviewContainer.appendChild(webview);
   });
+  
+  updateNavBar(paneName);
+}
+
+function updateNavBar(paneName) {
+  if (!activeWorkspace) return;
+  
+  const pane = activeWorkspace.panes[paneName];
+  if (!pane || !pane.activeTabId) return;
+  
+  const webview = document.getElementById(`webview-${paneName}-${pane.activeTabId}`);
+  const navUrl = document.querySelector(`.nav-url[data-pane="${paneName}"]`);
+  const navBack = document.querySelector(`.nav-back[data-pane="${paneName}"]`);
+  const navForward = document.querySelector(`.nav-forward[data-pane="${paneName}"]`);
+  
+  if (webview && navUrl) {
+    const tab = pane.tabs.find(t => t.id === pane.activeTabId);
+    navUrl.value = tab?.url || '';
+    
+    // Update back/forward button states
+    try {
+      navBack.disabled = !webview.canGoBack();
+      navForward.disabled = !webview.canGoForward();
+    } catch (e) {
+      // Webview might not be ready yet
+      navBack.disabled = true;
+      navForward.disabled = true;
+    }
+  }
 }
 
 async function createTab(paneName, url) {
@@ -371,12 +376,63 @@ async function switchTab(paneName, tabId) {
   container.querySelectorAll('webview').forEach(wv => {
     wv.classList.toggle('active', wv.id === `webview-${paneName}-${tabId}`);
   });
+  
+  updateNavBar(paneName);
+}
+
+function navigateBack(paneName) {
+  if (!activeWorkspace) return;
+  const pane = activeWorkspace.panes[paneName];
+  if (!pane || !pane.activeTabId) return;
+  
+  const webview = document.getElementById(`webview-${paneName}-${pane.activeTabId}`);
+  if (webview && webview.canGoBack()) {
+    webview.goBack();
+  }
+}
+
+function navigateForward(paneName) {
+  if (!activeWorkspace) return;
+  const pane = activeWorkspace.panes[paneName];
+  if (!pane || !pane.activeTabId) return;
+  
+  const webview = document.getElementById(`webview-${paneName}-${pane.activeTabId}`);
+  if (webview && webview.canGoForward()) {
+    webview.goForward();
+  }
 }
 
 function refreshTab(paneName, tabId) {
   const webview = document.getElementById(`webview-${paneName}-${tabId}`);
   if (webview) {
     webview.reload();
+  }
+}
+
+function refreshActiveTab(paneName) {
+  if (!activeWorkspace) return;
+  const pane = activeWorkspace.panes[paneName];
+  if (pane && pane.activeTabId) {
+    refreshTab(paneName, pane.activeTabId);
+  }
+}
+
+function navigateToUrl(paneName, url) {
+  if (!activeWorkspace) return;
+  const pane = activeWorkspace.panes[paneName];
+  if (!pane || !pane.activeTabId) return;
+  
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    if (url.includes('.') && !url.includes(' ')) {
+      url = 'https://' + url;
+    } else {
+      url = `https://www.google.com/search?q=${encodeURIComponent(url)}`;
+    }
+  }
+  
+  const webview = document.getElementById(`webview-${paneName}-${pane.activeTabId}`);
+  if (webview) {
+    webview.src = url;
   }
 }
 
@@ -406,12 +462,11 @@ async function updateTabTitle(paneName, tabId, title) {
     tab.title = title;
     await window.outerRim.workspace.update(activeWorkspace);
     
-    // Update displayed title (simplified)
     const tabEl = document.querySelector(`.pane-tab-item[data-pane="${paneName}"][data-id="${tabId}"] .pane-tab-title`);
     if (tabEl) {
       const displayTitle = simplifyTitle(title, tab.url);
       tabEl.textContent = displayTitle;
-      tabEl.title = title; // Full title on hover
+      tabEl.title = title;
     }
   }
 }
@@ -423,6 +478,15 @@ async function updateTabUrl(paneName, tabId, url) {
   if (tab) {
     tab.url = url;
     await window.outerRim.workspace.update(activeWorkspace);
+    
+    // Update nav bar URL if this is the active tab
+    const pane = activeWorkspace.panes[paneName];
+    if (pane.activeTabId === tabId) {
+      const navUrl = document.querySelector(`.nav-url[data-pane="${paneName}"]`);
+      if (navUrl) {
+        navUrl.value = url;
+      }
+    }
   }
 }
 
@@ -453,13 +517,13 @@ async function saveNotes() {
 
 function toggleNotepad() {
   const isCollapsed = notepadPanel.classList.toggle('collapsed');
-  notepadToggle.textContent = isCollapsed ? '▶' : '◀';
+  notepadToggle.textContent = isCollapsed ? '\u25b6' : '\u25c0';
   notepadExpand.classList.toggle('hidden', !isCollapsed);
 }
 
 function expandNotepad() {
   notepadPanel.classList.remove('collapsed');
-  notepadToggle.textContent = '◀';
+  notepadToggle.textContent = '\u25c0';
   notepadExpand.classList.add('hidden');
 }
 
@@ -561,14 +625,34 @@ function confirmTabModal() {
 // ============================================
 
 function setupEventListeners() {
-  // Add workspace buttons
   document.getElementById('add-workspace').addEventListener('click', openCreateWorkspaceModal);
   document.getElementById('empty-create-workspace').addEventListener('click', openCreateWorkspaceModal);
   
-  // Add tab buttons (for each pane)
   document.querySelectorAll('.pane-add-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       openTabModal(btn.dataset.pane);
+    });
+  });
+  
+  // Navigation bar buttons
+  document.querySelectorAll('.nav-back').forEach(btn => {
+    btn.addEventListener('click', () => navigateBack(btn.dataset.pane));
+  });
+  
+  document.querySelectorAll('.nav-forward').forEach(btn => {
+    btn.addEventListener('click', () => navigateForward(btn.dataset.pane));
+  });
+  
+  document.querySelectorAll('.nav-refresh').forEach(btn => {
+    btn.addEventListener('click', () => refreshActiveTab(btn.dataset.pane));
+  });
+  
+  document.querySelectorAll('.nav-url').forEach(input => {
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        navigateToUrl(input.dataset.pane, input.value.trim());
+        input.blur();
+      }
     });
   });
   
@@ -592,7 +676,6 @@ function setupEventListeners() {
     if (e.key === 'Enter') confirmTabModal();
   });
   
-  // Quick links
   document.querySelectorAll('.quick-link').forEach(btn => {
     btn.addEventListener('click', () => {
       createTab(activePane, btn.dataset.url);
@@ -600,22 +683,13 @@ function setupEventListeners() {
     });
   });
   
-  // Notepad
   notepadContent.addEventListener('input', saveNotes);
-  
-  // Notepad toggle (collapse)
   notepadToggle.addEventListener('click', toggleNotepad);
-  
-  // Notepad expand button (when collapsed)
   notepadExpand.addEventListener('click', expandNotepad);
   
-  // Pane resizer
   setupPaneResizer();
-  
-  // Notepad resizer
   setupNotepadResizer();
   
-  // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 't') {
       e.preventDefault();
@@ -639,11 +713,16 @@ function setupEventListeners() {
       e.preventDefault();
       activePane = 'right';
     }
-    // Cmd+R to refresh active tab
     if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
       e.preventDefault();
-      if (activeWorkspace?.panes[activePane]?.activeTabId) {
-        refreshTab(activePane, activeWorkspace.panes[activePane].activeTabId);
+      refreshActiveTab(activePane);
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'l') {
+      e.preventDefault();
+      const navUrl = document.querySelector(`.nav-url[data-pane="${activePane}"]`);
+      if (navUrl) {
+        navUrl.focus();
+        navUrl.select();
       }
     }
     if (e.key === 'Escape') {
@@ -670,7 +749,7 @@ function setupPaneResizer() {
     const container = document.getElementById('dual-pane-container');
     const containerRect = container.getBoundingClientRect();
     const notepadWidth = notepadPanel.classList.contains('collapsed') ? 0 : notepadPanel.offsetWidth;
-    const availableWidth = containerRect.width - notepadWidth - 12; // minus resizers
+    const availableWidth = containerRect.width - notepadWidth - 12;
     const newLeftWidth = e.clientX - containerRect.left;
     
     const leftPercent = (newLeftWidth / availableWidth) * 100;
@@ -713,9 +792,5 @@ function setupNotepadResizer() {
     document.body.style.cursor = '';
   });
 }
-
-// ============================================
-// BOOTSTRAP
-// ============================================
 
 document.addEventListener('DOMContentLoaded', init);
