@@ -1,0 +1,36 @@
+{
+  "name": "outer-rim",
+  "version": "0.1.0",
+  "description": "A workspace browser for parallel AI workstreams",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "NODE_ENV=development electron .",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:all": "electron-builder --mac --win"
+  },
+  "author": "Micaiah",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "uuid": "^9.0.0"
+  },
+  "build": {
+    "appId": "com.outerrim.app",
+    "productName": "Outer Rim",
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "assets/icon.icns"
+    },
+    "win": {
+      "icon": "assets/icon.ico"
+    }
+  }
+}

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:;">
+  <title>Outer Rim</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar: Workspace Switcher -->
+    <aside id="workspace-sidebar">
+      <div class="sidebar-header">
+        <span class="logo">◐</span>
+        <span class="logo-text">Outer Rim</span>
+      </div>
+      <div id="workspace-list"></div>
+      <button id="add-workspace" class="sidebar-btn" title="New Workspace">
+        <span>+</span>
+      </button>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main id="main-content">
+      <!-- Tab Bar -->
+      <header id="tab-bar">
+        <div id="tab-list"></div>
+        <button id="add-tab" class="tab-btn" title="New Tab">+</button>
+        <div id="window-controls">
+          <!-- For Windows, we'd add min/max/close here -->
+        </div>
+      </header>
+
+      <!-- Content Area: Webview + Notepad -->
+      <div id="content-area">
+        <!-- Webview Container -->
+        <div id="webview-container">
+          <div id="empty-state">
+            <div class="empty-icon">◐</div>
+            <h2>Welcome to Outer Rim</h2>
+            <p>Create a workspace to get started</p>
+            <button id="empty-create-workspace">Create Workspace</button>
+          </div>
+        </div>
+
+        <!-- Resizer Handle -->
+        <div id="notepad-resizer"></div>
+
+        <!-- Notepad Panel -->
+        <aside id="notepad-panel">
+          <div class="notepad-header">
+            <span class="notepad-title">📝 Workspace Notes</span>
+            <button id="notepad-toggle" title="Toggle Notepad">◀</button>
+          </div>
+          <textarea id="notepad-content" placeholder="Write your notes here...&#10;&#10;These notes are saved per workspace and persist across sessions."></textarea>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal for creating/editing workspaces -->
+  <div id="modal-overlay" class="hidden">
+    <div id="modal">
+      <h3 id="modal-title">New Workspace</h3>
+      <input type="text" id="workspace-name-input" placeholder="Workspace name..." autofocus>
+      <div class="modal-actions">
+        <button id="modal-cancel" class="btn-secondary">Cancel</button>
+        <button id="modal-confirm" class="btn-primary">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for new tab URL -->
+  <div id="tab-modal-overlay" class="hidden">
+    <div id="tab-modal">
+      <h3>New Tab</h3>
+      <input type="text" id="tab-url-input" placeholder="Enter URL or search..." autofocus>
+      <div class="quick-links">
+        <button class="quick-link" data-url="https://claude.ai/new">Claude Chat</button>
+        <button class="quick-link" data-url="https://github.com">GitHub</button>
+        <button class="quick-link" data-url="https://docs.google.com">Google Docs</button>
+      </div>
+      <div class="modal-actions">
+        <button id="tab-modal-cancel" class="btn-secondary">Cancel</button>
+        <button id="tab-modal-confirm" class="btn-primary">Open</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
