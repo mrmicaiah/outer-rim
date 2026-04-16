@@ -23,40 +23,58 @@
 
     <!-- Main Content Area -->
     <main id="main-content">
-      <!-- Tab Bar -->
-      <header id="tab-bar">
-        <div id="tab-list"></div>
-        <button id="add-tab" class="tab-btn" title="New Tab">+</button>
-        <div id="window-controls">
-          <!-- For Windows, we'd add min/max/close here -->
-        </div>
-      </header>
-
-      <!-- Content Area: Webview + Notepad -->
-      <div id="content-area">
-        <!-- Webview Container -->
-        <div id="webview-container">
-          <div id="empty-state">
-            <div class="empty-icon">◐</div>
-            <h2>Welcome to Outer Rim</h2>
-            <p>Create a workspace to get started</p>
-            <button id="empty-create-workspace">Create Workspace</button>
+      <!-- Dual Pane Container -->
+      <div id="dual-pane-container">
+        
+        <!-- LEFT PANE -->
+        <div class="pane" id="left-pane">
+          <header class="pane-tab-bar">
+            <div class="pane-tab-list" data-pane="left"></div>
+            <button class="pane-add-tab" data-pane="left" title="New Tab">+</button>
+          </header>
+          <div class="pane-webview-container" data-pane="left">
+            <div class="pane-empty-state">
+              <p>Click + to add a tab</p>
+            </div>
           </div>
         </div>
 
-        <!-- Resizer Handle -->
-        <div id="notepad-resizer"></div>
+        <!-- PANE RESIZER -->
+        <div id="pane-resizer"></div>
 
-        <!-- Notepad Panel -->
-        <aside id="notepad-panel">
-          <div class="notepad-header">
-            <span class="notepad-title">📝 Workspace Notes</span>
-            <button id="notepad-toggle" title="Toggle Notepad">◀</button>
+        <!-- RIGHT PANE -->
+        <div class="pane" id="right-pane">
+          <header class="pane-tab-bar">
+            <div class="pane-tab-list" data-pane="right"></div>
+            <button class="pane-add-tab" data-pane="right" title="New Tab">+</button>
+          </header>
+          <div class="pane-webview-container" data-pane="right">
+            <div class="pane-empty-state">
+              <p>Click + to add a tab</p>
+            </div>
           </div>
-          <textarea id="notepad-content" placeholder="Write your notes here...&#10;&#10;These notes are saved per workspace and persist across sessions."></textarea>
-        </aside>
+        </div>
+
       </div>
+
+      <!-- Notepad Panel (Bottom) -->
+      <div id="notepad-resizer-horizontal"></div>
+      <aside id="notepad-panel">
+        <div class="notepad-header">
+          <span class="notepad-title">📝 Workspace Notes</span>
+          <button id="notepad-toggle" title="Toggle Notepad">▼</button>
+        </div>
+        <textarea id="notepad-content" placeholder="Write your notes here...&#10;&#10;These notes are saved per workspace and persist across sessions."></textarea>
+      </aside>
     </main>
+  </div>
+
+  <!-- Empty State Overlay (shown when no workspace) -->
+  <div id="empty-state-overlay">
+    <div class="empty-icon">◐</div>
+    <h2>Welcome to Outer Rim</h2>
+    <p>Create a workspace to get started</p>
+    <button id="empty-create-workspace">Create Workspace</button>
   </div>
 
   <!-- Modal for creating/editing workspaces -->

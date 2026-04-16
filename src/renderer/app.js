@@ -1,5 +1,6 @@
 // ============================================
 // OUTER RIM - Renderer Application
+// Dual-Pane Architecture
 // ============================================
 
 // Browser-native UUID generator
@@ -10,13 +11,12 @@ function uuidv4() {
 // State
 let workspaces = [];
 let activeWorkspace = null;
+let activePane = 'left'; // Which pane the next tab will open in
 
 // DOM Elements
 const workspaceList = document.getElementById('workspace-list');
-const tabList = document.getElementById('tab-list');
-const webviewContainer = document.getElementById('webview-container');
 const notepadContent = document.getElementById('notepad-content');
-const emptyState = document.getElementById('empty-state');
+const emptyStateOverlay = document.getElementById('empty-state-overlay');
 
 // Modals
 const modalOverlay = document.getElementById('modal-overlay');
@@ -29,7 +29,6 @@ const tabUrlInput = document.getElementById('tab-url-input');
 // ============================================
 
 async function init() {
-  // Load workspaces from store
   workspaces = await window.outerRim.workspace.getAll();
   const active = await window.outerRim.workspace.getActive();
   
@@ -38,12 +37,9 @@ async function init() {
   }
   
   renderWorkspaces();
-  renderTabs();
-  renderWebviews();
+  renderPanes();
   updateNotepad();
   updateEmptyState();
-  
-  // Set up event listeners
   setupEventListeners();
 }
 
@@ -67,20 +63,17 @@ function renderWorkspaces() {
       </div>
     `;
     
-    // Click to switch workspace
     item.addEventListener('click', (e) => {
       if (!e.target.classList.contains('workspace-action-btn')) {
         switchWorkspace(workspace.id);
       }
     });
     
-    // Edit button
     item.querySelector('.edit').addEventListener('click', (e) => {
       e.stopPropagation();
       openRenameModal(workspace);
     });
     
-    // Delete button
     item.querySelector('.delete').addEventListener('click', (e) => {
       e.stopPropagation();
       deleteWorkspace(workspace.id);
@@ -94,8 +87,10 @@ async function createWorkspace(name) {
   const workspace = {
     id: uuidv4(),
     name: name,
-    tabs: [],
-    activeTabId: null,
+    panes: {
+      left: { tabs: [], activeTabId: null },
+      right: { tabs: [], activeTabId: null }
+    },
     notes: '',
     createdAt: new Date().toISOString()
   };
@@ -105,8 +100,7 @@ async function createWorkspace(name) {
   activeWorkspace = workspace;
   
   renderWorkspaces();
-  renderTabs();
-  renderWebviews();
+  renderPanes();
   updateNotepad();
   updateEmptyState();
 }
@@ -116,8 +110,7 @@ async function switchWorkspace(workspaceId) {
   await window.outerRim.workspace.setActive(workspaceId);
   
   renderWorkspaces();
-  renderTabs();
-  renderWebviews();
+  renderPanes();
   updateNotepad();
 }
 
@@ -131,8 +124,7 @@ async function deleteWorkspace(workspaceId) {
   }
   
   renderWorkspaces();
-  renderTabs();
-  renderWebviews();
+  renderPanes();
   updateNotepad();
   updateEmptyState();
 }
@@ -147,67 +139,90 @@ async function renameWorkspace(workspaceId, newName) {
 }
 
 // ============================================
-// TAB MANAGEMENT
+// DUAL-PANE TAB MANAGEMENT
 // ============================================
 
-function renderTabs() {
+function renderPanes() {
+  renderPane('left');
+  renderPane('right');
+}
+
+function renderPane(paneName) {
+  const tabList = document.querySelector(`.pane-tab-list[data-pane="${paneName}"]`);
+  const webviewContainer = document.querySelector(`.pane-webview-container[data-pane="${paneName}"]`);
+  
+  // Clear existing
   tabList.innerHTML = '';
+  webviewContainer.querySelectorAll('webview').forEach(wv => wv.remove());
   
-  if (!activeWorkspace) return;
+  if (!activeWorkspace) {
+    webviewContainer.querySelector('.pane-empty-state').style.display = 'block';
+    return;
+  }
   
-  activeWorkspace.tabs.forEach(tab => {
+  // Migrate old workspace format if needed
+  if (!activeWorkspace.panes) {
+    activeWorkspace.panes = {
+      left: { tabs: activeWorkspace.tabs || [], activeTabId: activeWorkspace.activeTabId || null },
+      right: { tabs: [], activeTabId: null }
+    };
+    delete activeWorkspace.tabs;
+    delete activeWorkspace.activeTabId;
+    window.outerRim.workspace.update(activeWorkspace);
+  }
+  
+  const pane = activeWorkspace.panes[paneName];
+  
+  // Show/hide empty state
+  const emptyState = webviewContainer.querySelector('.pane-empty-state');
+  emptyState.style.display = pane.tabs.length === 0 ? 'block' : 'none';
+  
+  // Render tabs
+  pane.tabs.forEach(tab => {
+    // Tab item
     const item = document.createElement('div');
-    item.className = `tab-item ${activeWorkspace.activeTabId === tab.id ? 'active' : ''}`;
+    item.className = `pane-tab-item ${pane.activeTabId === tab.id ? 'active' : ''}`;
     item.dataset.id = tab.id;
+    item.dataset.pane = paneName;
     
     const favicon = getFaviconUrl(tab.url);
     
     item.innerHTML = `
-      <img class="tab-favicon" src="${favicon}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><rect fill=%22%23666%22 width=%2216%22 height=%2216%22 rx=%222%22/></svg>'">
-      <span class="tab-title">${escapeHtml(tab.title || 'New Tab')}</span>
-      <button class="tab-close" title="Close tab">×</button>
+      <img class="pane-tab-favicon" src="${favicon}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><rect fill=%22%23666%22 width=%2216%22 height=%2216%22 rx=%222%22/></svg>'">
+      <span class="pane-tab-title">${escapeHtml(tab.title || 'New Tab')}</span>
+      <button class="pane-tab-close" title="Close tab">×</button>
     `;
     
     item.addEventListener('click', (e) => {
-      if (!e.target.classList.contains('tab-close')) {
-        switchTab(tab.id);
+      if (!e.target.classList.contains('pane-tab-close')) {
+        switchTab(paneName, tab.id);
       }
     });
     
-    item.querySelector('.tab-close').addEventListener('click', (e) => {
+    item.querySelector('.pane-tab-close').addEventListener('click', (e) => {
       e.stopPropagation();
-      closeTab(tab.id);
+      closeTab(paneName, tab.id);
     });
     
     tabList.appendChild(item);
-  });
-}
-
-function renderWebviews() {
-  // Remove all existing webviews
-  webviewContainer.querySelectorAll('webview').forEach(wv => wv.remove());
-  
-  if (!activeWorkspace) return;
-  
-  activeWorkspace.tabs.forEach(tab => {
-    const webview = document.createElement('webview');
-    webview.id = `webview-${tab.id}`;
-    webview.src = tab.url;
-    webview.className = activeWorkspace.activeTabId === tab.id ? 'active' : '';
     
-    // Handle title updates
+    // Webview
+    const webview = document.createElement('webview');
+    webview.id = `webview-${paneName}-${tab.id}`;
+    webview.src = tab.url;
+    webview.className = pane.activeTabId === tab.id ? 'active' : '';
+    
     webview.addEventListener('page-title-updated', (e) => {
-      updateTabTitle(tab.id, e.title);
+      updateTabTitle(paneName, tab.id, e.title);
     });
     
-    // Handle URL changes (navigation)
     webview.addEventListener('did-navigate', (e) => {
-      updateTabUrl(tab.id, e.url);
+      updateTabUrl(paneName, tab.id, e.url);
     });
     
     webview.addEventListener('did-navigate-in-page', (e) => {
       if (e.isMainFrame) {
-        updateTabUrl(tab.id, e.url);
+        updateTabUrl(paneName, tab.id, e.url);
       }
     });
     
@@ -215,12 +230,11 @@ function renderWebviews() {
   });
 }
 
-async function createTab(url) {
+async function createTab(paneName, url) {
   if (!activeWorkspace) return;
   
   // Ensure URL has protocol
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    // Check if it looks like a URL or a search query
     if (url.includes('.') && !url.includes(' ')) {
       url = 'https://' + url;
     } else {
@@ -235,65 +249,79 @@ async function createTab(url) {
     createdAt: new Date().toISOString()
   };
   
-  activeWorkspace = await window.outerRim.tab.add(activeWorkspace.id, tab);
+  activeWorkspace.panes[paneName].tabs.push(tab);
+  activeWorkspace.panes[paneName].activeTabId = tab.id;
+  
+  await window.outerRim.workspace.update(activeWorkspace);
+  
   const idx = workspaces.findIndex(w => w.id === activeWorkspace.id);
   workspaces[idx] = activeWorkspace;
   
-  renderTabs();
-  renderWebviews();
-  updateEmptyState();
+  renderPane(paneName);
 }
 
-async function switchTab(tabId) {
+async function switchTab(paneName, tabId) {
   if (!activeWorkspace) return;
   
-  activeWorkspace = await window.outerRim.tab.setActive(activeWorkspace.id, tabId);
+  activeWorkspace.panes[paneName].activeTabId = tabId;
+  await window.outerRim.workspace.update(activeWorkspace);
+  
   const idx = workspaces.findIndex(w => w.id === activeWorkspace.id);
   workspaces[idx] = activeWorkspace;
   
-  renderTabs();
+  // Update tab UI
+  const tabList = document.querySelector(`.pane-tab-list[data-pane="${paneName}"]`);
+  tabList.querySelectorAll('.pane-tab-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.id === tabId);
+  });
   
-  // Show/hide webviews
-  webviewContainer.querySelectorAll('webview').forEach(wv => {
-    wv.className = wv.id === `webview-${tabId}` ? 'active' : '';
+  // Update webview visibility
+  const container = document.querySelector(`.pane-webview-container[data-pane="${paneName}"]`);
+  container.querySelectorAll('webview').forEach(wv => {
+    wv.classList.toggle('active', wv.id === `webview-${paneName}-${tabId}`);
   });
 }
 
-async function closeTab(tabId) {
+async function closeTab(paneName, tabId) {
   if (!activeWorkspace) return;
   
-  activeWorkspace = await window.outerRim.tab.remove(activeWorkspace.id, tabId);
+  const pane = activeWorkspace.panes[paneName];
+  pane.tabs = pane.tabs.filter(t => t.id !== tabId);
+  
+  if (pane.activeTabId === tabId) {
+    pane.activeTabId = pane.tabs[0]?.id || null;
+  }
+  
+  await window.outerRim.workspace.update(activeWorkspace);
+  
   const idx = workspaces.findIndex(w => w.id === activeWorkspace.id);
   workspaces[idx] = activeWorkspace;
   
-  renderTabs();
-  renderWebviews();
-  updateEmptyState();
+  renderPane(paneName);
 }
 
-async function updateTabTitle(tabId, title) {
+async function updateTabTitle(paneName, tabId, title) {
   if (!activeWorkspace) return;
   
-  const tab = activeWorkspace.tabs.find(t => t.id === tabId);
+  const tab = activeWorkspace.panes[paneName].tabs.find(t => t.id === tabId);
   if (tab) {
     tab.title = title;
-    await window.outerRim.tab.update(activeWorkspace.id, tab);
+    await window.outerRim.workspace.update(activeWorkspace);
     
-    // Update DOM directly for performance
-    const tabEl = tabList.querySelector(`[data-id="${tabId}"] .tab-title`);
+    const tabEl = document.querySelector(`.pane-tab-item[data-pane="${paneName}"][data-id="${tabId}"] .pane-tab-title`);
     if (tabEl) {
       tabEl.textContent = title;
     }
   }
 }
 
-async function updateTabUrl(tabId, url) {
+async function updateTabUrl(paneName, tabId, url) {
   if (!activeWorkspace) return;
   
-  const tab = activeWorkspace.tabs.find(t => t.id === tabId);
+  const tab = activeWorkspace.panes[paneName].tabs.find(t => t.id === tabId);
   if (tab) {
     tab.url = url;
-    await window.outerRim.tab.update(activeWorkspace.id, tab);
+    await window.outerRim.workspace.update(activeWorkspace);
   }
 }
 
@@ -315,7 +343,6 @@ let notepadSaveTimeout = null;
 async function saveNotes() {
   if (!activeWorkspace) return;
   
-  // Debounce saves
   clearTimeout(notepadSaveTimeout);
   notepadSaveTimeout = setTimeout(async () => {
     activeWorkspace.notes = notepadContent.value;
@@ -328,15 +355,10 @@ async function saveNotes() {
 // ============================================
 
 function updateEmptyState() {
-  if (workspaces.length === 0 || (activeWorkspace && activeWorkspace.tabs.length === 0)) {
-    emptyState.style.display = 'block';
-    if (workspaces.length === 0) {
-      emptyState.querySelector('p').textContent = 'Create a workspace to get started';
-    } else {
-      emptyState.querySelector('p').textContent = 'Add a tab to start browsing';
-    }
+  if (workspaces.length === 0 || !activeWorkspace) {
+    emptyStateOverlay.classList.remove('hidden');
   } else {
-    emptyState.style.display = 'none';
+    emptyStateOverlay.classList.add('hidden');
   }
 }
 
@@ -398,11 +420,12 @@ function confirmWorkspaceModal() {
   closeWorkspaceModal();
 }
 
-function openTabModal() {
+function openTabModal(paneName) {
   if (!activeWorkspace) {
     alert('Create a workspace first');
     return;
   }
+  activePane = paneName;
   tabUrlInput.value = '';
   tabModalOverlay.classList.remove('hidden');
   tabUrlInput.focus();
@@ -416,7 +439,7 @@ function confirmTabModal() {
   const url = tabUrlInput.value.trim();
   if (!url) return;
   
-  createTab(url);
+  createTab(activePane, url);
   closeTabModal();
 }
 
@@ -425,12 +448,16 @@ function confirmTabModal() {
 // ============================================
 
 function setupEventListeners() {
-  // Add workspace button
+  // Add workspace buttons
   document.getElementById('add-workspace').addEventListener('click', openCreateWorkspaceModal);
   document.getElementById('empty-create-workspace').addEventListener('click', openCreateWorkspaceModal);
   
-  // Add tab button
-  document.getElementById('add-tab').addEventListener('click', openTabModal);
+  // Add tab buttons (for each pane)
+  document.querySelectorAll('.pane-add-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openTabModal(btn.dataset.pane);
+    });
+  });
   
   // Workspace modal
   document.getElementById('modal-cancel').addEventListener('click', closeWorkspaceModal);
@@ -452,11 +479,10 @@ function setupEventListeners() {
     if (e.key === 'Enter') confirmTabModal();
   });
   
-  // Quick links in tab modal
+  // Quick links
   document.querySelectorAll('.quick-link').forEach(btn => {
     btn.addEventListener('click', () => {
-      const url = btn.dataset.url;
-      createTab(url);
+      createTab(activePane, btn.dataset.url);
       closeTabModal();
     });
   });
@@ -469,32 +495,40 @@ function setupEventListeners() {
     const panel = document.getElementById('notepad-panel');
     const btn = document.getElementById('notepad-toggle');
     panel.classList.toggle('collapsed');
-    btn.textContent = panel.classList.contains('collapsed') ? '▶' : '◀';
+    btn.textContent = panel.classList.contains('collapsed') ? '▲' : '▼';
   });
+  
+  // Pane resizer
+  setupPaneResizer();
   
   // Notepad resizer
   setupNotepadResizer();
   
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
-    // Cmd/Ctrl + T: New tab
     if ((e.metaKey || e.ctrlKey) && e.key === 't') {
       e.preventDefault();
-      openTabModal();
+      openTabModal(activePane);
     }
-    // Cmd/Ctrl + W: Close tab
     if ((e.metaKey || e.ctrlKey) && e.key === 'w') {
       e.preventDefault();
-      if (activeWorkspace?.activeTabId) {
-        closeTab(activeWorkspace.activeTabId);
+      if (activeWorkspace?.panes[activePane]?.activeTabId) {
+        closeTab(activePane, activeWorkspace.panes[activePane].activeTabId);
       }
     }
-    // Cmd/Ctrl + N: New workspace
     if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
       e.preventDefault();
       openCreateWorkspaceModal();
     }
-    // Escape: Close modals
+    // Switch pane focus with Cmd+1 and Cmd+2
+    if ((e.metaKey || e.ctrlKey) && e.key === '1') {
+      e.preventDefault();
+      activePane = 'left';
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === '2') {
+      e.preventDefault();
+      activePane = 'right';
+    }
     if (e.key === 'Escape') {
       closeWorkspaceModal();
       closeTabModal();
@@ -502,12 +536,13 @@ function setupEventListeners() {
   });
 }
 
-function setupNotepadResizer() {
-  const resizer = document.getElementById('notepad-resizer');
-  const panel = document.getElementById('notepad-panel');
+function setupPaneResizer() {
+  const resizer = document.getElementById('pane-resizer');
+  const leftPane = document.getElementById('left-pane');
+  const rightPane = document.getElementById('right-pane');
   let isResizing = false;
   
-  resizer.addEventListener('mousedown', (e) => {
+  resizer.addEventListener('mousedown', () => {
     isResizing = true;
     document.body.style.cursor = 'col-resize';
   });
@@ -515,11 +550,44 @@ function setupNotepadResizer() {
   document.addEventListener('mousemove', (e) => {
     if (!isResizing) return;
     
-    const containerWidth = document.getElementById('content-area').offsetWidth;
-    const newWidth = containerWidth - e.clientX + document.getElementById('workspace-sidebar').offsetWidth;
+    const container = document.getElementById('dual-pane-container');
+    const containerRect = container.getBoundingClientRect();
+    const newLeftWidth = e.clientX - containerRect.left;
+    const totalWidth = containerRect.width - 6; // minus resizer width
     
-    if (newWidth > 200 && newWidth < 600) {
-      panel.style.width = newWidth + 'px';
+    const leftPercent = (newLeftWidth / totalWidth) * 100;
+    
+    if (leftPercent > 20 && leftPercent < 80) {
+      leftPane.style.flex = `0 0 ${leftPercent}%`;
+      rightPane.style.flex = `0 0 ${100 - leftPercent}%`;
+    }
+  });
+  
+  document.addEventListener('mouseup', () => {
+    isResizing = false;
+    document.body.style.cursor = '';
+  });
+}
+
+function setupNotepadResizer() {
+  const resizer = document.getElementById('notepad-resizer-horizontal');
+  const panel = document.getElementById('notepad-panel');
+  let isResizing = false;
+  
+  resizer.addEventListener('mousedown', () => {
+    isResizing = true;
+    document.body.style.cursor = 'row-resize';
+  });
+  
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    
+    const mainContent = document.getElementById('main-content');
+    const mainRect = mainContent.getBoundingClientRect();
+    const newHeight = mainRect.bottom - e.clientY;
+    
+    if (newHeight > 50 && newHeight < 400) {
+      panel.style.height = newHeight + 'px';
     }
   });
   
