@@ -12,6 +12,9 @@ let mainWindow;
 // Screenshot folder path
 const SCREENSHOTS_PATH = path.join(os.homedir(), 'Desktop', 'screen_shot_data');
 
+// Cloud sync endpoint
+const SYNC_API = 'https://micaiahs-worker.micaiah-tasks.workers.dev/api/outerrim';
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -40,6 +43,9 @@ function createWindow() {
   
   // Initialize default profile if none exist
   initializeProfiles();
+  
+  // Sync workspaces to cloud on startup
+  syncWorkspacesToCloud();
 }
 
 // Initialize profiles
@@ -52,6 +58,80 @@ function initializeProfiles() {
   }
 }
 
+// ============================================
+// CLOUD SYNC
+// ============================================
+
+async function syncWorkspacesToCloud() {
+  try {
+    const workspaces = store.get('workspaces') || [];
+    
+    // Prepare sync payload (just id, name, notes, updatedAt)
+    const syncData = workspaces.map(w => ({
+      id: w.id,
+      name: w.name,
+      notes: w.notes || '',
+      updatedAt: w.updatedAt || w.createdAt || new Date().toISOString()
+    }));
+    
+    const response = await fetch(`${SYNC_API}/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspaces: syncData })
+    });
+    
+    if (response.ok) {
+      const result = await response.json();
+      console.log(`☁️ Synced ${result.workspaces?.length || 0} workspaces to cloud`);
+      
+      // Merge any cloud changes back (in case notes were updated remotely)
+      if (result.workspaces) {
+        mergeCloudWorkspaces(result.workspaces);
+      }
+    } else {
+      console.error('Cloud sync failed:', response.status);
+    }
+  } catch (err) {
+    console.error('Cloud sync error:', err.message);
+  }
+}
+
+function mergeCloudWorkspaces(cloudWorkspaces) {
+  const localWorkspaces = store.get('workspaces') || [];
+  let updated = false;
+  
+  for (const cloud of cloudWorkspaces) {
+    const local = localWorkspaces.find(w => w.id === cloud.id);
+    if (local) {
+      // If cloud notes are newer, update local
+      const cloudTime = new Date(cloud.updatedAt || 0).getTime();
+      const localTime = new Date(local.updatedAt || local.createdAt || 0).getTime();
+      
+      if (cloudTime > localTime && cloud.notes !== local.notes) {
+        local.notes = cloud.notes;
+        local.updatedAt = cloud.updatedAt;
+        updated = true;
+        console.log(`☁️ Updated local notes for "${local.name}" from cloud`);
+      }
+    }
+  }
+  
+  if (updated) {
+    store.set('workspaces', localWorkspaces);
+    // Notify renderer to refresh
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('workspaces:updated');
+    }
+  }
+}
+
+// Debounced sync - called when workspaces change
+let syncTimeout = null;
+function scheduleSyncToCloud() {
+  clearTimeout(syncTimeout);
+  syncTimeout = setTimeout(syncWorkspacesToCloud, 2000); // Sync 2 seconds after last change
+}
+
 // Create application menu with Edit menu for copy/paste
 function createAppMenu() {
   const template = [
@@ -59,6 +139,12 @@ function createAppMenu() {
       label: 'Outer Rim',
       submenu: [
         { role: 'about' },
+        { type: 'separator' },
+        {
+          label: 'Sync Now',
+          accelerator: 'CmdOrCtrl+Shift+S',
+          click: () => syncWorkspacesToCloud()
+        },
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
@@ -184,19 +270,23 @@ ipcMain.handle('workspace:getActive', () => {
 });
 
 ipcMain.handle('workspace:create', (event, workspace) => {
+  workspace.updatedAt = new Date().toISOString();
   const workspaces = store.get('workspaces') || [];
   workspaces.push(workspace);
   store.set('workspaces', workspaces);
   store.set('activeWorkspaceId', workspace.id);
+  scheduleSyncToCloud();
   return workspace;
 });
 
 ipcMain.handle('workspace:update', (event, workspace) => {
+  workspace.updatedAt = new Date().toISOString();
   const workspaces = store.get('workspaces') || [];
   const index = workspaces.findIndex(w => w.id === workspace.id);
   if (index !== -1) {
     workspaces[index] = workspace;
     store.set('workspaces', workspaces);
+    scheduleSyncToCloud();
   }
   return workspace;
 });
@@ -210,6 +300,7 @@ ipcMain.handle('workspace:delete', (event, id) => {
     store.set('activeWorkspaceId', workspaces[0]?.id || null);
   }
   
+  scheduleSyncToCloud();
   return workspaces;
 });
 
@@ -227,7 +318,9 @@ ipcMain.handle('notes:update', (event, workspaceId, notes) => {
   const workspace = workspaces.find(w => w.id === workspaceId);
   if (workspace) {
     workspace.notes = notes;
+    workspace.updatedAt = new Date().toISOString();
     store.set('workspaces', workspaces);
+    scheduleSyncToCloud();
   }
   return notes;
 });
@@ -291,6 +384,31 @@ ipcMain.handle('profiles:rename', (event, id, name) => {
     store.set('profiles', profiles);
   }
   return profiles;
+});
+
+// ============================================
+// CLOUD SYNC IPC HANDLERS
+// ============================================
+
+ipcMain.handle('sync:now', async () => {
+  await syncWorkspacesToCloud();
+  return { success: true };
+});
+
+ipcMain.handle('sync:pull', async () => {
+  try {
+    const response = await fetch(`${SYNC_API}/workspaces`);
+    if (response.ok) {
+      const data = await response.json();
+      if (data.workspaces) {
+        mergeCloudWorkspaces(data.workspaces);
+        return { success: true, count: data.workspaces.length };
+      }
+    }
+    return { success: false };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 });
 
 // ============================================
