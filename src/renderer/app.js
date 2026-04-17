@@ -1,6 +1,6 @@
 // ============================================
 // OUTER RIM - Renderer Application
-// With Session Profiles for Multi-User Testing
+// With Session Profiles - Each profile has its own tabs
 // ============================================
 
 function uuidv4() {
@@ -13,7 +13,6 @@ let activeWorkspace = null;
 let activePane = 'left';
 let scratchpadContent = '';
 let profiles = [];
-let selectedProfiles = { left: 'default', right: 'default' };
 
 // Resizer state
 let currentResizer = null;
@@ -49,6 +48,12 @@ async function init() {
   
   // Load profiles
   profiles = await window.outerRim.profiles.getAll();
+  
+  // Migrate old workspaces to new structure if needed
+  if (activeWorkspace) {
+    migrateWorkspaceStructure(activeWorkspace);
+  }
+  
   updateProfileSelectors();
   
   // Load scratchpad
@@ -91,13 +96,96 @@ async function init() {
 }
 
 // ============================================
+// WORKSPACE STRUCTURE MIGRATION
+// ============================================
+
+// New structure:
+// panes: {
+//   left: {
+//     activeProfileId: 'default',
+//     profiles: {
+//       'default': { tabs: [], activeTabId: null },
+//       'user-a': { tabs: [], activeTabId: null }
+//     }
+//   },
+//   right: { ... }
+// }
+
+function migrateWorkspaceStructure(workspace) {
+  if (!workspace.panes) {
+    workspace.panes = {
+      left: { activeProfileId: 'default', profiles: { 'default': { tabs: [], activeTabId: null } } },
+      right: { activeProfileId: 'default', profiles: { 'default': { tabs: [], activeTabId: null } } }
+    };
+    window.outerRim.workspace.update(workspace);
+    return;
+  }
+  
+  // Check if already migrated (has profiles object)
+  const leftPane = workspace.panes.left;
+  if (leftPane && !leftPane.profiles) {
+    // Old structure: { tabs: [], activeTabId: null, profileId: 'default' }
+    // Migrate to new structure
+    const oldProfileId = leftPane.profileId || 'default';
+    workspace.panes.left = {
+      activeProfileId: oldProfileId,
+      profiles: {
+        [oldProfileId]: { tabs: leftPane.tabs || [], activeTabId: leftPane.activeTabId || null }
+      }
+    };
+    // Ensure default profile exists
+    if (oldProfileId !== 'default') {
+      workspace.panes.left.profiles['default'] = { tabs: [], activeTabId: null };
+    }
+  }
+  
+  const rightPane = workspace.panes.right;
+  if (rightPane && !rightPane.profiles) {
+    const oldProfileId = rightPane.profileId || 'default';
+    workspace.panes.right = {
+      activeProfileId: oldProfileId,
+      profiles: {
+        [oldProfileId]: { tabs: rightPane.tabs || [], activeTabId: rightPane.activeTabId || null }
+      }
+    };
+    if (oldProfileId !== 'default') {
+      workspace.panes.right.profiles['default'] = { tabs: [], activeTabId: null };
+    }
+  }
+  
+  window.outerRim.workspace.update(workspace);
+}
+
+function ensurePaneProfile(pane, profileId) {
+  if (!pane.profiles) {
+    pane.profiles = {};
+  }
+  if (!pane.profiles[profileId]) {
+    pane.profiles[profileId] = { tabs: [], activeTabId: null };
+  }
+  return pane.profiles[profileId];
+}
+
+function getCurrentPaneData(paneName) {
+  if (!activeWorkspace?.panes?.[paneName]) return null;
+  const pane = activeWorkspace.panes[paneName];
+  const profileId = pane.activeProfileId || 'default';
+  return ensurePaneProfile(pane, profileId);
+}
+
+function getCurrentProfileId(paneName) {
+  if (!activeWorkspace?.panes?.[paneName]) return 'default';
+  return activeWorkspace.panes[paneName].activeProfileId || 'default';
+}
+
+// ============================================
 // PROFILE MANAGEMENT
 // ============================================
 
 function updateProfileSelectors() {
   document.querySelectorAll('.profile-select').forEach(select => {
     const pane = select.dataset.pane;
-    const currentValue = selectedProfiles[pane] || 'default';
+    const currentValue = getCurrentProfileId(pane);
     
     select.innerHTML = profiles.map(p => 
       `<option value="${p.id}" ${p.id === currentValue ? 'selected' : ''}>${escapeHtml(p.name)}</option>`
@@ -134,7 +222,7 @@ function renderProfileList() {
     btn.addEventListener('click', async (e) => {
       const item = e.target.closest('.profile-item');
       const id = item.dataset.id;
-      if (confirm(`Delete profile "${profiles.find(p => p.id === id)?.name}"? This will clear all saved logins for this profile.`)) {
+      if (confirm(`Delete profile "${profiles.find(p => p.id === id)?.name}"? This will clear all saved logins and tabs for this profile.`)) {
         await deleteProfile(id);
       }
     });
@@ -159,12 +247,23 @@ async function deleteProfile(id) {
   profiles = profiles.filter(p => p.id !== id);
   
   // Reset any panes using this profile to default
-  if (selectedProfiles.left === id) selectedProfiles.left = 'default';
-  if (selectedProfiles.right === id) selectedProfiles.right = 'default';
+  if (activeWorkspace) {
+    ['left', 'right'].forEach(paneName => {
+      const pane = activeWorkspace.panes[paneName];
+      if (pane.activeProfileId === id) {
+        pane.activeProfileId = 'default';
+      }
+      // Remove deleted profile's tabs
+      if (pane.profiles && pane.profiles[id]) {
+        delete pane.profiles[id];
+      }
+    });
+    await window.outerRim.workspace.update(activeWorkspace);
+  }
   
   renderProfileList();
   updateProfileSelectors();
-  renderPanes(); // Refresh webviews
+  renderPanes();
 }
 
 function getPartitionForProfile(profileId) {
@@ -260,10 +359,10 @@ function handleMouseMove(e) {
 
 function toggleActiveWebviewDevTools() {
   if (!activeWorkspace) return;
-  const pane = activeWorkspace.panes[activePane];
-  if (!pane || !pane.activeTabId) return;
+  const paneData = getCurrentPaneData(activePane);
+  if (!paneData || !paneData.activeTabId) return;
   
-  const webview = document.getElementById(`webview-${activePane}-${pane.activeTabId}`);
+  const webview = document.getElementById(`webview-${activePane}-${paneData.activeTabId}`);
   if (webview) {
     if (webview.isDevToolsOpened()) {
       webview.closeDevTools();
@@ -495,8 +594,14 @@ async function createWorkspace(name) {
     id: uuidv4(),
     name: name,
     panes: {
-      left: { tabs: [], activeTabId: null, profileId: 'default' },
-      right: { tabs: [], activeTabId: null, profileId: 'default' }
+      left: { 
+        activeProfileId: 'default', 
+        profiles: { 'default': { tabs: [], activeTabId: null } } 
+      },
+      right: { 
+        activeProfileId: 'default', 
+        profiles: { 'default': { tabs: [], activeTabId: null } } 
+      }
     },
     notes: '',
     createdAt: new Date().toISOString()
@@ -506,10 +611,7 @@ async function createWorkspace(name) {
   workspaces.push(workspace);
   activeWorkspace = workspace;
   
-  // Reset selected profiles
-  selectedProfiles = { left: 'default', right: 'default' };
   updateProfileSelectors();
-  
   renderWorkspaces();
   renderPanes();
   updateNotepad();
@@ -520,13 +622,12 @@ async function switchWorkspace(workspaceId) {
   activeWorkspace = workspaces.find(w => w.id === workspaceId);
   await window.outerRim.workspace.setActive(workspaceId);
   
-  // Load workspace profile selections
-  if (activeWorkspace?.panes) {
-    selectedProfiles.left = activeWorkspace.panes.left?.profileId || 'default';
-    selectedProfiles.right = activeWorkspace.panes.right?.profileId || 'default';
-    updateProfileSelectors();
+  // Migrate if needed
+  if (activeWorkspace) {
+    migrateWorkspaceStructure(activeWorkspace);
   }
   
+  updateProfileSelectors();
   renderWorkspaces();
   renderPanes();
   updateNotepad();
@@ -579,34 +680,24 @@ function renderPane(paneName) {
     return;
   }
   
-  if (!activeWorkspace.panes) {
-    activeWorkspace.panes = {
-      left: { tabs: activeWorkspace.tabs || [], activeTabId: activeWorkspace.activeTabId || null, profileId: 'default' },
-      right: { tabs: [], activeTabId: null, profileId: 'default' }
-    };
-    delete activeWorkspace.tabs;
-    delete activeWorkspace.activeTabId;
-    window.outerRim.workspace.update(activeWorkspace);
-  }
+  // Ensure structure is migrated
+  migrateWorkspaceStructure(activeWorkspace);
   
   const pane = activeWorkspace.panes[paneName];
-  
-  // Ensure profileId exists
-  if (!pane.profileId) {
-    pane.profileId = 'default';
-  }
-  selectedProfiles[paneName] = pane.profileId;
+  const profileId = pane.activeProfileId || 'default';
+  const paneData = ensurePaneProfile(pane, profileId);
   
   const emptyState = webviewContainer.querySelector('.pane-empty-state');
-  const hasTabs = pane.tabs.length > 0;
+  const hasTabs = paneData.tabs.length > 0;
   emptyState.style.display = hasTabs ? 'none' : 'block';
   navBar.classList.toggle('hidden', !hasTabs);
   
-  const partition = getPartitionForProfile(pane.profileId);
+  const partition = getPartitionForProfile(profileId);
+  const profile = profiles.find(p => p.id === profileId);
   
-  pane.tabs.forEach(tab => {
+  paneData.tabs.forEach(tab => {
     const item = document.createElement('div');
-    item.className = `pane-tab-item ${pane.activeTabId === tab.id ? 'active' : ''}`;
+    item.className = `pane-tab-item ${paneData.activeTabId === tab.id ? 'active' : ''}`;
     item.dataset.id = tab.id;
     item.dataset.pane = paneName;
     
@@ -614,8 +705,8 @@ function renderPane(paneName) {
     const displayTitle = simplifyTitle(tab.title, tab.url);
     
     // Show profile badge if not default
-    const profileBadge = pane.profileId !== 'default' 
-      ? `<span class="pane-tab-profile-badge">${escapeHtml(profiles.find(p => p.id === pane.profileId)?.name || pane.profileId)}</span>`
+    const profileBadge = profileId !== 'default' 
+      ? `<span class="pane-tab-profile-badge">${escapeHtml(profile?.name || profileId)}</span>`
       : '';
     
     item.innerHTML = `
@@ -641,7 +732,7 @@ function renderPane(paneName) {
     const webview = document.createElement('webview');
     webview.id = `webview-${paneName}-${tab.id}`;
     webview.src = tab.url;
-    webview.className = pane.activeTabId === tab.id ? 'active' : '';
+    webview.className = paneData.activeTabId === tab.id ? 'active' : '';
     webview.setAttribute('partition', partition);
     webview.setAttribute('allowpopups', 'true');
     
@@ -683,16 +774,16 @@ function renderPane(paneName) {
 function updateNavBar(paneName) {
   if (!activeWorkspace) return;
   
-  const pane = activeWorkspace.panes[paneName];
-  if (!pane || !pane.activeTabId) return;
+  const paneData = getCurrentPaneData(paneName);
+  if (!paneData || !paneData.activeTabId) return;
   
-  const webview = document.getElementById(`webview-${paneName}-${pane.activeTabId}`);
+  const webview = document.getElementById(`webview-${paneName}-${paneData.activeTabId}`);
   const navUrl = document.querySelector(`.nav-url[data-pane="${paneName}"]`);
   const navBack = document.querySelector(`.nav-back[data-pane="${paneName}"]`);
   const navForward = document.querySelector(`.nav-forward[data-pane="${paneName}"]`);
   
   if (webview && navUrl) {
-    const tab = pane.tabs.find(t => t.id === pane.activeTabId);
+    const tab = paneData.tabs.find(t => t.id === paneData.activeTabId);
     navUrl.value = tab?.url || '';
     
     try {
@@ -723,8 +814,9 @@ async function createTab(paneName, url) {
     createdAt: new Date().toISOString()
   };
   
-  activeWorkspace.panes[paneName].tabs.push(tab);
-  activeWorkspace.panes[paneName].activeTabId = tab.id;
+  const paneData = getCurrentPaneData(paneName);
+  paneData.tabs.push(tab);
+  paneData.activeTabId = tab.id;
   
   await window.outerRim.workspace.update(activeWorkspace);
   
@@ -737,7 +829,8 @@ async function createTab(paneName, url) {
 async function switchTab(paneName, tabId) {
   if (!activeWorkspace) return;
   
-  activeWorkspace.panes[paneName].activeTabId = tabId;
+  const paneData = getCurrentPaneData(paneName);
+  paneData.activeTabId = tabId;
   await window.outerRim.workspace.update(activeWorkspace);
   
   const idx = workspaces.findIndex(w => w.id === activeWorkspace.id);
@@ -758,10 +851,10 @@ async function switchTab(paneName, tabId) {
 
 function navigateBack(paneName) {
   if (!activeWorkspace) return;
-  const pane = activeWorkspace.panes[paneName];
-  if (!pane || !pane.activeTabId) return;
+  const paneData = getCurrentPaneData(paneName);
+  if (!paneData || !paneData.activeTabId) return;
   
-  const webview = document.getElementById(`webview-${paneName}-${pane.activeTabId}`);
+  const webview = document.getElementById(`webview-${paneName}-${paneData.activeTabId}`);
   if (webview && webview.canGoBack()) {
     webview.goBack();
   }
@@ -769,10 +862,10 @@ function navigateBack(paneName) {
 
 function navigateForward(paneName) {
   if (!activeWorkspace) return;
-  const pane = activeWorkspace.panes[paneName];
-  if (!pane || !pane.activeTabId) return;
+  const paneData = getCurrentPaneData(paneName);
+  if (!paneData || !paneData.activeTabId) return;
   
-  const webview = document.getElementById(`webview-${paneName}-${pane.activeTabId}`);
+  const webview = document.getElementById(`webview-${paneName}-${paneData.activeTabId}`);
   if (webview && webview.canGoForward()) {
     webview.goForward();
   }
@@ -787,16 +880,16 @@ function refreshTab(paneName, tabId) {
 
 function refreshActiveTab(paneName) {
   if (!activeWorkspace) return;
-  const pane = activeWorkspace.panes[paneName];
-  if (pane && pane.activeTabId) {
-    refreshTab(paneName, pane.activeTabId);
+  const paneData = getCurrentPaneData(paneName);
+  if (paneData && paneData.activeTabId) {
+    refreshTab(paneName, paneData.activeTabId);
   }
 }
 
 function navigateToUrl(paneName, url) {
   if (!activeWorkspace) return;
-  const pane = activeWorkspace.panes[paneName];
-  if (!pane || !pane.activeTabId) return;
+  const paneData = getCurrentPaneData(paneName);
+  if (!paneData || !paneData.activeTabId) return;
   
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
     if (url.includes('.') && !url.includes(' ')) {
@@ -806,7 +899,7 @@ function navigateToUrl(paneName, url) {
     }
   }
   
-  const webview = document.getElementById(`webview-${paneName}-${pane.activeTabId}`);
+  const webview = document.getElementById(`webview-${paneName}-${paneData.activeTabId}`);
   if (webview) {
     webview.src = url;
   }
@@ -815,11 +908,11 @@ function navigateToUrl(paneName, url) {
 async function closeTab(paneName, tabId) {
   if (!activeWorkspace) return;
   
-  const pane = activeWorkspace.panes[paneName];
-  pane.tabs = pane.tabs.filter(t => t.id !== tabId);
+  const paneData = getCurrentPaneData(paneName);
+  paneData.tabs = paneData.tabs.filter(t => t.id !== tabId);
   
-  if (pane.activeTabId === tabId) {
-    pane.activeTabId = pane.tabs[0]?.id || null;
+  if (paneData.activeTabId === tabId) {
+    paneData.activeTabId = paneData.tabs[0]?.id || null;
   }
   
   await window.outerRim.workspace.update(activeWorkspace);
@@ -833,7 +926,8 @@ async function closeTab(paneName, tabId) {
 async function updateTabTitle(paneName, tabId, title) {
   if (!activeWorkspace) return;
   
-  const tab = activeWorkspace.panes[paneName].tabs.find(t => t.id === tabId);
+  const paneData = getCurrentPaneData(paneName);
+  const tab = paneData?.tabs.find(t => t.id === tabId);
   if (tab) {
     tab.title = title;
     await window.outerRim.workspace.update(activeWorkspace);
@@ -850,13 +944,13 @@ async function updateTabTitle(paneName, tabId, title) {
 async function updateTabUrl(paneName, tabId, url) {
   if (!activeWorkspace) return;
   
-  const tab = activeWorkspace.panes[paneName].tabs.find(t => t.id === tabId);
+  const paneData = getCurrentPaneData(paneName);
+  const tab = paneData?.tabs.find(t => t.id === tabId);
   if (tab) {
     tab.url = url;
     await window.outerRim.workspace.update(activeWorkspace);
     
-    const pane = activeWorkspace.panes[paneName];
-    if (pane.activeTabId === tabId) {
+    if (paneData.activeTabId === tabId) {
       const navUrl = document.querySelector(`.nav-url[data-pane="${paneName}"]`);
       if (navUrl) {
         navUrl.value = url;
@@ -868,13 +962,17 @@ async function updateTabUrl(paneName, tabId, url) {
 async function changeProfile(paneName, profileId) {
   if (!activeWorkspace) return;
   
-  selectedProfiles[paneName] = profileId;
-  activeWorkspace.panes[paneName].profileId = profileId;
+  const pane = activeWorkspace.panes[paneName];
+  pane.activeProfileId = profileId;
+  
+  // Ensure this profile has a tabs array
+  ensurePaneProfile(pane, profileId);
   
   await window.outerRim.workspace.update(activeWorkspace);
   
-  // Re-render the pane to apply new partition
+  // Re-render the pane to show different tabs
   renderPane(paneName);
+  updateProfileSelectors();
 }
 
 // ============================================
@@ -1341,8 +1439,9 @@ function setupEventListeners() {
     }
     if ((e.metaKey || e.ctrlKey) && e.key === 'w') {
       e.preventDefault();
-      if (activeWorkspace?.panes[activePane]?.activeTabId) {
-        closeTab(activePane, activeWorkspace.panes[activePane].activeTabId);
+      const paneData = getCurrentPaneData(activePane);
+      if (paneData?.activeTabId) {
+        closeTab(activePane, paneData.activeTabId);
       }
     }
     if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
