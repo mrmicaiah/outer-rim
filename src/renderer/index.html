@@ -152,7 +152,24 @@
       <div id="commander-content">
         <div id="commander-header">
           <span class="commander-title">🤖 Claude Commander</span>
-          <button id="commander-close" title="Close">✕</button>
+          <div class="commander-header-actions">
+            <button id="commander-settings-btn" title="Settings">⚙</button>
+            <button id="commander-close" title="Close">✕</button>
+          </div>
+        </div>
+        
+        <!-- Settings Panel (hidden by default) -->
+        <div id="commander-settings" class="hidden">
+          <div class="settings-row">
+            <label>API Key:</label>
+            <div class="api-key-input-row">
+              <input type="password" id="api-key-input" placeholder="sk-ant-...">
+              <button id="api-key-toggle" title="Show/Hide">👁</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span id="api-key-status" class="api-key-status"></span>
+          </div>
         </div>
         
         <!-- Chat List -->
@@ -180,7 +197,7 @@
         
         <!-- Input Area -->
         <div id="commander-input-area">
-          <textarea id="commander-input" placeholder="Message Claude..."></textarea>
+          <textarea id="commander-input" placeholder="Message Claude... (Cmd+Enter to send)"></textarea>
           <div id="commander-actions">
             <button id="clear-chat-btn" class="btn-secondary" title="Summarize & Clear">Clear</button>
             <button id="send-btn" class="btn-primary">Send</button>

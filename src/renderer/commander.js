@@ -37,7 +37,74 @@ async function initCommander() {
   renderChatTabs();
   renderProjectSelect();
   loadActiveChat();
+  updateApiKeyStatus();
   setupCommanderListeners();
+}
+
+// ============================================
+// API KEY MANAGEMENT
+// ============================================
+
+function updateApiKeyStatus() {
+  const status = document.getElementById('api-key-status');
+  const input = document.getElementById('api-key-input');
+  
+  if (apiKey) {
+    status.textContent = '✓ API key saved';
+    status.className = 'api-key-status success';
+    // Show masked version
+    input.value = apiKey.slice(0, 10) + '...' + apiKey.slice(-4);
+    input.dataset.masked = 'true';
+  } else {
+    status.textContent = 'No API key set';
+    status.className = 'api-key-status';
+    input.value = '';
+    input.dataset.masked = 'false';
+  }
+}
+
+function toggleApiKeyVisibility() {
+  const input = document.getElementById('api-key-input');
+  const btn = document.getElementById('api-key-toggle');
+  
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '🙈';
+    // If showing masked, show full key
+    if (input.dataset.masked === 'true' && apiKey) {
+      input.value = apiKey;
+    }
+  } else {
+    input.type = 'password';
+    btn.textContent = '👁';
+  }
+}
+
+function handleApiKeyInput(e) {
+  const value = e.target.value.trim();
+  
+  // Ignore if it's the masked value
+  if (e.target.dataset.masked === 'true' && value.includes('...')) {
+    return;
+  }
+  
+  // Clear masking state on real input
+  e.target.dataset.masked = 'false';
+  
+  if (value.startsWith('sk-ant-')) {
+    apiKey = value;
+    scheduleSave();
+    updateApiKeyStatus();
+  } else if (value === '') {
+    apiKey = null;
+    scheduleSave();
+    updateApiKeyStatus();
+  }
+}
+
+function toggleSettings() {
+  const settings = document.getElementById('commander-settings');
+  settings.classList.toggle('hidden');
 }
 
 // ============================================
@@ -375,9 +442,10 @@ async function sendMessage() {
   if (!message) return;
   
   if (!apiKey) {
-    apiKey = prompt('Enter your Anthropic API key:');
-    if (!apiKey) return;
-    scheduleSave();
+    // Open settings and focus the API key input
+    document.getElementById('commander-settings').classList.remove('hidden');
+    document.getElementById('api-key-input').focus();
+    return;
   }
   
   const chat = chats[activeChatId];
@@ -474,6 +542,13 @@ async function clearChat() {
     return;
   }
   
+  // Show loading
+  const container = document.getElementById('commander-messages');
+  const loadingDiv = document.createElement('div');
+  loadingDiv.className = 'commander-message assistant loading';
+  loadingDiv.innerHTML = '<div class="message-content">Summarizing...</div>';
+  container.appendChild(loadingDiv);
+  
   // Ask Claude to summarize
   const summaryPrompt = `Summarize what was accomplished in this conversation in 1-2 sentences. Focus on what was built, fixed, or changed. Be specific about file names and functions when relevant. Start directly with the summary, no preamble.`;
   
@@ -513,6 +588,8 @@ async function clearChat() {
     console.error('Summary error:', e);
   }
   
+  loadingDiv.remove();
+  
   // Clear messages
   chat.messages = [];
   chat.updatedAt = Date.now();
@@ -528,6 +605,18 @@ function setupCommanderListeners() {
   // Toggle panel
   document.getElementById('commander-toggle').addEventListener('click', toggleCommander);
   document.getElementById('commander-close').addEventListener('click', toggleCommander);
+  
+  // Settings
+  document.getElementById('commander-settings-btn').addEventListener('click', toggleSettings);
+  document.getElementById('api-key-input').addEventListener('input', handleApiKeyInput);
+  document.getElementById('api-key-input').addEventListener('focus', (e) => {
+    // Clear masked value on focus so user can paste
+    if (e.target.dataset.masked === 'true') {
+      e.target.value = '';
+      e.target.dataset.masked = 'false';
+    }
+  });
+  document.getElementById('api-key-toggle').addEventListener('click', toggleApiKeyVisibility);
   
   // New chat
   document.getElementById('new-chat-btn').addEventListener('click', createNewChat);
@@ -592,7 +681,7 @@ function setupCommanderListeners() {
   
   // Keyboard shortcut
   document.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'c') {
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'c') {
       e.preventDefault();
       toggleCommander();
     }
