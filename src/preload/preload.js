@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld('outerRim', {
   },
   // Local Project Operations
   project: {
+    getProjectsPath: () => ipcRenderer.invoke('project:getProjectsPath'),
+    exists: (localPath) => ipcRenderer.invoke('project:exists', localPath),
     browse: () => ipcRenderer.invoke('project:browse'),
     listFiles: (projectPath, subPath) => ipcRenderer.invoke('project:listFiles', projectPath, subPath),
     readFile: (projectPath, filePath) => ipcRenderer.invoke('project:readFile', projectPath, filePath),
@@ -52,6 +54,7 @@ contextBridge.exposeInMainWorld('outerRim', {
   },
   // Git Operations
   git: {
+    clone: (repoName, localPath) => ipcRenderer.invoke('git:clone', repoName, localPath),
     status: (projectPath) => ipcRenderer.invoke('git:status', projectPath),
     push: (projectPath, message) => ipcRenderer.invoke('git:push', projectPath, message),
     pull: (projectPath) => ipcRenderer.invoke('git:pull', projectPath),

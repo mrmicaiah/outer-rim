@@ -12,6 +12,7 @@ let chats = {};
 let projects = {};
 let activeChatId = null;
 let apiKey = null;
+let projectsPath = '~/Projects'; // Will be set from main process
 
 // Debounce timer
 let saveTimeout = null;
@@ -22,6 +23,9 @@ let gitStatusInterval = null;
 // ============================================
 
 async function initCommander() {
+  // Get projects path from main process
+  projectsPath = await window.outerRim.project.getProjectsPath();
+  
   const data = await window.outerRim.commander.load();
   chats = data.chats || {};
   projects = data.projects || {};
@@ -54,7 +58,7 @@ function updateApiKeyStatus() {
   const input = document.getElementById('api-key-input');
   
   if (apiKey) {
-    status.textContent = '✓ API key saved';
+    status.textContent = '\u2713 API key saved';
     status.className = 'api-key-status success';
     input.value = apiKey.slice(0, 10) + '...' + apiKey.slice(-4);
     input.dataset.masked = 'true';
@@ -72,13 +76,13 @@ function toggleApiKeyVisibility() {
   
   if (input.type === 'password') {
     input.type = 'text';
-    btn.textContent = '🙈';
+    btn.textContent = '\ud83d\ude48';
     if (input.dataset.masked === 'true' && apiKey) {
       input.value = apiKey;
     }
   } else {
     input.type = 'password';
-    btn.textContent = '👁';
+    btn.textContent = '\ud83d\udc41';
   }
 }
 
@@ -187,6 +191,15 @@ function getCurrentProject() {
   return chat?.projectId ? projects[chat.projectId] : null;
 }
 
+// Derive local path from repo name
+function getLocalPathFromRepo(repo) {
+  if (!repo) return '';
+  // Extract repo name from "owner/repo" or full URL
+  const parts = repo.replace(/\.git$/, '').split('/');
+  const repoName = parts[parts.length - 1];
+  return `${projectsPath}/${repoName}`;
+}
+
 // ============================================
 // GIT OPERATIONS
 // ============================================
@@ -207,11 +220,11 @@ async function updateGitStatus() {
     if (result.success) {
       if (result.hasChanges) {
         indicator.className = 'git-status has-changes';
-        indicator.textContent = `● ${result.changes.length}`;
+        indicator.textContent = `\u25cf ${result.changes.length}`;
         indicator.title = `${result.changes.length} uncommitted changes`;
       } else {
         indicator.className = 'git-status clean';
-        indicator.textContent = '✓';
+        indicator.textContent = '\u2713';
         indicator.title = 'Working tree clean';
       }
     } else {
@@ -243,21 +256,21 @@ async function gitPull() {
   
   const btn = document.getElementById('git-pull-btn');
   btn.disabled = true;
-  btn.textContent = '↻ Pulling...';
+  btn.textContent = '\u21bb Pulling...';
   
   try {
     const result = await window.outerRim.git.pull(project.localPath);
     if (result.success) {
-      showGitToast('✓ Pulled successfully');
+      showGitToast('\u2713 Pulled successfully');
     } else {
-      showGitToast('✗ Pull failed: ' + result.error, true);
+      showGitToast('\u2717 Pull failed: ' + result.error, true);
     }
   } catch (err) {
-    showGitToast('✗ Pull error: ' + err.message, true);
+    showGitToast('\u2717 Pull error: ' + err.message, true);
   }
   
   btn.disabled = false;
-  btn.textContent = '⬇ Pull';
+  btn.textContent = '\u2b07 Pull';
   updateGitStatus();
 }
 
@@ -270,27 +283,26 @@ async function gitPush() {
   const message = msgInput.value.trim() || `Update from Outer Rim`;
   
   btn.disabled = true;
-  btn.textContent = '↻ Pushing...';
+  btn.textContent = '\u21bb Pushing...';
   
   try {
     const result = await window.outerRim.git.push(project.localPath, message);
     if (result.success) {
-      showGitToast('✓ Pushed successfully');
+      showGitToast('\u2713 Pushed successfully');
       msgInput.value = '';
     } else {
-      showGitToast('✗ Push failed: ' + result.error, true);
+      showGitToast('\u2717 Push failed: ' + result.error, true);
     }
   } catch (err) {
-    showGitToast('✗ Push error: ' + err.message, true);
+    showGitToast('\u2717 Push error: ' + err.message, true);
   }
   
   btn.disabled = false;
-  btn.textContent = '⬆ Push';
+  btn.textContent = '\u2b06 Push';
   updateGitStatus();
 }
 
 function showGitToast(message, isError = false) {
-  // Simple toast notification
   const existing = document.querySelector('.git-toast');
   if (existing) existing.remove();
   
@@ -336,7 +348,7 @@ function renderChatTabs() {
     
     const close = document.createElement('button');
     close.className = 'chat-tab-close';
-    close.textContent = '×';
+    close.textContent = '\u00d7';
     close.addEventListener('click', (e) => { e.stopPropagation(); deleteChat(chat.id); });
     
     tab.appendChild(label);
@@ -383,7 +395,7 @@ function renderMessages() {
   if (chat.changelog.length > 0) {
     const logDiv = document.createElement('div');
     logDiv.className = 'commander-changelog';
-    logDiv.innerHTML = '<div class="changelog-header">📜 Previous Work</div>';
+    logDiv.innerHTML = '<div class="changelog-header">\ud83d\udcdc Previous Work</div>';
     chat.changelog.slice(0, 10).forEach(entry => {
       const item = document.createElement('div');
       item.className = 'changelog-item';
@@ -650,6 +662,15 @@ function setupCommanderListeners() {
     if (e.target.id === 'project-modal-overlay') closeProjectModal();
   });
   document.getElementById('project-browse-btn').addEventListener('click', browseProjectFolder);
+  
+  // Auto-fill local path when repo changes
+  document.getElementById('project-repo-input').addEventListener('input', (e) => {
+    const pathInput = document.getElementById('project-path-input');
+    // Only auto-fill if path is empty or matches the pattern
+    if (!pathInput.value || pathInput.value.startsWith(projectsPath)) {
+      pathInput.value = getLocalPathFromRepo(e.target.value);
+    }
+  });
 }
 
 // ============================================
@@ -663,28 +684,31 @@ function openProjectModal(projectId = null) {
   const modal = document.getElementById('project-modal-overlay');
   const title = document.getElementById('project-modal-title');
   const deleteBtn = document.getElementById('project-modal-delete');
+  const saveBtn = document.getElementById('project-modal-save');
   
   if (projectId && projects[projectId]) {
     const p = projects[projectId];
     title.textContent = 'Edit Project';
     document.getElementById('project-name-input').value = p.name || '';
-    document.getElementById('project-path-input').value = p.localPath || '';
     document.getElementById('project-repo-input').value = p.repo || '';
+    document.getElementById('project-path-input').value = p.localPath || '';
     document.getElementById('project-stack-input').value = p.stack || '';
     document.getElementById('project-files-input').value = p.keyFiles || '';
     deleteBtn.style.display = 'block';
+    saveBtn.textContent = 'Save';
   } else {
     title.textContent = 'New Project';
     document.getElementById('project-name-input').value = '';
-    document.getElementById('project-path-input').value = '';
     document.getElementById('project-repo-input').value = '';
+    document.getElementById('project-path-input').value = '';
     document.getElementById('project-stack-input').value = '';
     document.getElementById('project-files-input').value = '';
     deleteBtn.style.display = 'none';
+    saveBtn.textContent = 'Clone & Create';
   }
   
   modal.classList.remove('hidden');
-  document.getElementById('project-name-input').focus();
+  document.getElementById('project-repo-input').focus();
 }
 
 function closeProjectModal() {
@@ -699,17 +723,61 @@ async function browseProjectFolder() {
   }
 }
 
-function saveProjectModal() {
+async function saveProjectModal() {
+  const repoInput = document.getElementById('project-repo-input').value.trim();
+  const pathInput = document.getElementById('project-path-input').value.trim();
+  const nameInput = document.getElementById('project-name-input').value.trim();
+  
+  // Derive name from repo if not provided
+  const name = nameInput || repoInput.split('/').pop() || 'Untitled';
+  const localPath = pathInput || getLocalPathFromRepo(repoInput);
+  
+  if (!repoInput && !editingProjectId) {
+    alert('Please enter a GitHub repository (e.g., owner/repo)');
+    return;
+  }
+  
   const config = {
-    name: document.getElementById('project-name-input').value.trim(),
-    localPath: document.getElementById('project-path-input').value.trim(),
-    repo: document.getElementById('project-repo-input').value.trim(),
+    name,
+    repo: repoInput,
+    localPath,
     stack: document.getElementById('project-stack-input').value.trim(),
     keyFiles: document.getElementById('project-files-input').value.trim()
   };
   
-  if (!config.name) { alert('Project name is required'); return; }
+  // For new projects, clone the repo
+  if (!editingProjectId && repoInput) {
+    const saveBtn = document.getElementById('project-modal-save');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Cloning...';
+    
+    try {
+      const result = await window.outerRim.git.clone(repoInput, localPath);
+      
+      if (!result.success) {
+        alert('Clone failed: ' + result.error);
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Clone & Create';
+        return;
+      }
+      
+      if (result.alreadyExists) {
+        showGitToast('Using existing repository');
+      } else {
+        showGitToast('\u2713 Repository cloned!');
+      }
+    } catch (err) {
+      alert('Clone error: ' + err.message);
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Clone & Create';
+      return;
+    }
+    
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Clone & Create';
+  }
   
+  // Create or update project
   if (editingProjectId) {
     updateProject(editingProjectId, config);
   } else {
@@ -727,7 +795,7 @@ function saveProjectModal() {
 
 function deleteProjectModal() {
   if (!editingProjectId) return;
-  if (!confirm('Delete this project?')) return;
+  if (!confirm('Delete this project? (Local files will not be deleted)')) return;
   deleteProject(editingProjectId);
   closeProjectModal();
 }

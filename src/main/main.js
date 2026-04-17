@@ -12,6 +12,9 @@ let mainWindow;
 // Screenshot folder path
 const SCREENSHOTS_PATH = path.join(os.homedir(), 'Desktop', 'screen_shot_data');
 
+// Default projects folder
+const PROJECTS_PATH = path.join(os.homedir(), 'Projects');
+
 // Cloud sync endpoint
 const SYNC_API = 'https://micaiahs-worker.micaiah-tasks.workers.dev/api/outerrim';
 
@@ -36,6 +39,11 @@ function createWindow() {
 
   if (process.argv.includes('--dev')) {
     mainWindow.webContents.openDevTools();
+  }
+  
+  // Ensure projects folder exists
+  if (!fs.existsSync(PROJECTS_PATH)) {
+    fs.mkdirSync(PROJECTS_PATH, { recursive: true });
   }
   
   watchScreenshots();
@@ -74,7 +82,7 @@ async function syncWorkspacesToCloud() {
     
     if (response.ok) {
       const result = await response.json();
-      console.log(`☁️ Synced ${result.workspaces?.length || 0} workspaces to cloud`);
+      console.log(`\u2601\ufe0f Synced ${result.workspaces?.length || 0} workspaces to cloud`);
       if (result.workspaces) {
         mergeCloudWorkspaces(result.workspaces);
       }
@@ -353,11 +361,21 @@ ipcMain.handle('commander:save', (event, data) => {
 
 // Resolve ~ to home directory
 function resolvePath(inputPath) {
+  if (!inputPath) return inputPath;
   if (inputPath.startsWith('~')) {
     return inputPath.replace('~', os.homedir());
   }
   return inputPath;
 }
+
+// Get default projects folder
+ipcMain.handle('project:getProjectsPath', () => PROJECTS_PATH);
+
+// Check if a local path exists
+ipcMain.handle('project:exists', async (event, localPath) => {
+  const resolved = resolvePath(localPath);
+  return fs.existsSync(resolved);
+});
 
 // Browse for folder
 ipcMain.handle('project:browse', async () => {
@@ -454,9 +472,47 @@ ipcMain.handle('project:deleteFile', async (event, projectPath, filePath) => {
 // GIT OPERATIONS
 // ============================================
 
+// Clone a repository
+ipcMain.handle('git:clone', async (event, repoName, localPath) => {
+  const resolved = resolvePath(localPath);
+  
+  // Check if folder already exists
+  if (fs.existsSync(resolved)) {
+    // Check if it's already a git repo
+    if (fs.existsSync(path.join(resolved, '.git'))) {
+      return { success: true, message: 'Repository already exists', alreadyExists: true };
+    } else {
+      return { success: false, error: 'Folder exists but is not a git repository' };
+    }
+  }
+  
+  // Build clone URL (support both "owner/repo" and full URLs)
+  let cloneUrl = repoName;
+  if (!repoName.includes('://')) {
+    cloneUrl = `https://github.com/${repoName}.git`;
+  }
+  
+  return new Promise((resolve) => {
+    const cmd = `git clone "${cloneUrl}" "${resolved}"`;
+    
+    exec(cmd, { timeout: 120000 }, (error, stdout, stderr) => {
+      if (error) {
+        resolve({ success: false, error: stderr || error.message });
+      } else {
+        resolve({ success: true, message: 'Repository cloned successfully' });
+      }
+    });
+  });
+});
+
 // Get git status
 ipcMain.handle('git:status', async (event, projectPath) => {
   const cwd = resolvePath(projectPath);
+  
+  if (!fs.existsSync(path.join(cwd, '.git'))) {
+    return { success: false, error: 'Not a git repository' };
+  }
+  
   return new Promise((resolve) => {
     exec('git status --porcelain', { cwd }, (error, stdout, stderr) => {
       if (error) {
