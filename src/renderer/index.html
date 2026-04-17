@@ -3,186 +3,211 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: file:; connect-src 'self' https:;">
   <title>Outer Rim</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div id="app">
-    <!-- DRAGGABLE TITLE BAR -->
-    <header id="title-bar">
+    <!-- Title Bar -->
+    <div id="title-bar">
       <div class="title-bar-drag-region"></div>
       <span class="title-bar-text">Outer Rim</span>
-    </header>
+    </div>
 
-    <!-- Main Content Area -->
-    <main id="main-content">
-      <!-- Upper Section: Dual Panes + Notepad -->
+    <!-- Main Content -->
+    <div id="main-content">
       <div id="upper-section">
+        <!-- Dual Pane Browser -->
         <div id="dual-pane-container">
-          
-          <!-- LEFT PANE -->
-          <div class="pane" id="left-pane">
-            <header class="pane-tab-bar">
+          <!-- Left Pane -->
+          <div id="left-pane" class="pane">
+            <div class="pane-tab-bar">
               <div class="pane-tab-list" data-pane="left"></div>
               <button class="pane-add-tab" data-pane="left" title="New Tab">+</button>
-            </header>
-            <div class="pane-nav-bar" data-pane="left">
+              <div class="pane-profile-selector">
+                <select class="profile-select" data-pane="left" title="Session Profile">
+                  <option value="default">Default</option>
+                </select>
+                <button class="profile-manage-btn" title="Manage Profiles">⚙</button>
+              </div>
+            </div>
+            <div class="pane-nav-bar hidden" data-pane="left">
               <button class="nav-btn nav-back" data-pane="left" title="Back">◀</button>
               <button class="nav-btn nav-forward" data-pane="left" title="Forward">▶</button>
               <button class="nav-btn nav-refresh" data-pane="left" title="Refresh">↻</button>
-              <input type="text" class="nav-url" data-pane="left" placeholder="Enter URL...">
+              <input type="text" class="nav-url" data-pane="left" placeholder="Enter URL or search...">
             </div>
             <div class="pane-webview-container" data-pane="left">
               <div class="pane-empty-state">
-                <p>Click + to add a tab</p>
+                <p>Click + to open a tab</p>
               </div>
             </div>
           </div>
 
-          <!-- PANE RESIZER -->
+          <!-- Pane Resizer -->
           <div id="pane-resizer"></div>
 
-          <!-- RIGHT PANE -->
-          <div class="pane" id="right-pane">
-            <header class="pane-tab-bar">
+          <!-- Right Pane -->
+          <div id="right-pane" class="pane">
+            <div class="pane-tab-bar">
               <div class="pane-tab-list" data-pane="right"></div>
               <button class="pane-add-tab" data-pane="right" title="New Tab">+</button>
-            </header>
-            <div class="pane-nav-bar" data-pane="right">
+              <div class="pane-profile-selector">
+                <select class="profile-select" data-pane="right" title="Session Profile">
+                  <option value="default">Default</option>
+                </select>
+                <button class="profile-manage-btn" title="Manage Profiles">⚙</button>
+              </div>
+            </div>
+            <div class="pane-nav-bar hidden" data-pane="right">
               <button class="nav-btn nav-back" data-pane="right" title="Back">◀</button>
               <button class="nav-btn nav-forward" data-pane="right" title="Forward">▶</button>
               <button class="nav-btn nav-refresh" data-pane="right" title="Refresh">↻</button>
-              <input type="text" class="nav-url" data-pane="right" placeholder="Enter URL...">
+              <input type="text" class="nav-url" data-pane="right" placeholder="Enter URL or search...">
             </div>
             <div class="pane-webview-container" data-pane="right">
               <div class="pane-empty-state">
-                <p>Click + to add a tab</p>
+                <p>Click + to open a tab</p>
               </div>
             </div>
           </div>
 
-          <!-- NOTEPAD RESIZER -->
+          <!-- Notepad Resizer -->
           <div id="notepad-resizer"></div>
 
-          <!-- NOTEPAD PANEL -->
-          <aside id="notepad-panel">
+          <!-- Notepad Panel -->
+          <div id="notepad-panel">
             <div class="notepad-header">
               <span class="notepad-title">📝 Notes</span>
-              <button id="notepad-toggle" title="Toggle Notepad">◀</button>
+              <button id="notepad-toggle" title="Collapse">◀</button>
             </div>
-            <textarea id="notepad-content" placeholder="Write your notes here...&#10;&#10;These notes are saved per workspace and persist across sessions."></textarea>
-          </aside>
+            <textarea id="notepad-content" placeholder="Workspace notes..."></textarea>
+          </div>
+
+          <!-- Notepad Expand Button (when collapsed) -->
+          <button id="notepad-expand" class="hidden" title="Expand Notes">📝</button>
         </div>
 
-        <button id="notepad-expand" class="hidden" title="Show Notes">📝</button>
-      </div>
+        <!-- Bottom Panel Resizer -->
+        <div id="bottom-panel-resizer"></div>
 
-      <!-- BOTTOM PANEL RESIZER -->
-      <div id="bottom-panel-resizer"></div>
+        <!-- Bottom Tool Panel -->
+        <div id="bottom-panel">
+          <div class="bottom-panel-header">
+            <span class="bottom-panel-title">Tools</span>
+            <button id="bottom-panel-toggle" title="Toggle Panel">▼</button>
+          </div>
+          <div class="bottom-panel-content">
+            <!-- Screenshots Section -->
+            <div id="screenshots-section" class="bottom-section">
+              <div class="bottom-section-header">
+                <span>📸 Screenshots</span>
+                <div class="bottom-section-actions">
+                  <button id="screenshots-refresh" title="Refresh">↻</button>
+                  <button id="screenshots-delete-all" class="danger-btn" title="Delete All">🗑️</button>
+                </div>
+              </div>
+              <div id="screenshots-list"></div>
+            </div>
 
-      <!-- BOTTOM TOOL PANEL - THREE COLUMNS -->
-      <div id="bottom-panel">
-        <div class="bottom-panel-header">
-          <span class="bottom-panel-title">🛠️ Tools</span>
-          <button id="bottom-panel-toggle" title="Toggle Panel">▼</button>
-        </div>
-        
-        <div class="bottom-panel-content">
-          <!-- SCREENSHOTS SECTION -->
-          <div class="bottom-section" id="screenshots-section">
-            <div class="bottom-section-header">
-              <span>📸 Screenshots</span>
-              <div class="bottom-section-actions">
-                <button id="screenshots-delete-all" class="danger-btn" title="Delete All">🗑️ Clear</button>
-                <button id="screenshots-refresh" title="Refresh">↻</button>
+            <!-- Resizer -->
+            <div class="bottom-section-resizer" data-resize="screenshots-terminal"></div>
+
+            <!-- Terminal Section -->
+            <div id="terminal-section" class="bottom-section">
+              <div class="bottom-section-header">
+                <span>💻 Terminal</span>
+              </div>
+              <div id="terminal-output"></div>
+              <div class="terminal-input-row">
+                <span class="terminal-prompt">$</span>
+                <input type="text" id="terminal-input" placeholder="Enter command...">
               </div>
             </div>
-            <div id="screenshots-list"></div>
-          </div>
 
-          <!-- SECTION RESIZER -->
-          <div class="bottom-section-resizer" data-resize="screenshots-terminal"></div>
+            <!-- Resizer -->
+            <div class="bottom-section-resizer" data-resize="terminal-scratchpad"></div>
 
-          <!-- TERMINAL SECTION -->
-          <div class="bottom-section" id="terminal-section">
-            <div class="bottom-section-header">
-              <span>💻 Terminal</span>
+            <!-- Scratchpad Section -->
+            <div id="scratchpad-section" class="bottom-section">
+              <div class="bottom-section-header">
+                <span>📝 Scratchpad</span>
+              </div>
+              <textarea id="scratchpad-content" placeholder="Quick notes..."></textarea>
             </div>
-            <div id="terminal-output"></div>
-            <div class="terminal-input-row">
-              <span class="terminal-prompt">$</span>
-              <input type="text" id="terminal-input" placeholder="Enter command...">
-            </div>
-          </div>
-
-          <!-- SECTION RESIZER -->
-          <div class="bottom-section-resizer" data-resize="terminal-scratchpad"></div>
-
-          <!-- SCRATCHPAD SECTION -->
-          <div class="bottom-section" id="scratchpad-section">
-            <div class="bottom-section-header">
-              <span>📝 Scratchpad</span>
-            </div>
-            <textarea id="scratchpad-content" placeholder="Quick notes, code snippets, temporary text..."></textarea>
           </div>
         </div>
       </div>
 
-      <!-- WORKSPACE BAR (BOTTOM) -->
-      <footer id="workspace-bar">
+      <!-- Workspace Bar -->
+      <div id="workspace-bar">
         <div id="workspace-list"></div>
-        <button id="add-workspace" class="workspace-add-btn" title="New Workspace">+ New Workspace</button>
-      </footer>
-    </main>
-  </div>
-
-  <!-- Empty State Overlay -->
-  <div id="empty-state-overlay">
-    <div class="empty-icon">◐</div>
-    <h2>Welcome to Outer Rim</h2>
-    <p>Create a workspace to get started</p>
-    <button id="empty-create-workspace">Create Workspace</button>
-  </div>
-
-  <!-- Screenshot Preview Modal -->
-  <div id="screenshot-preview-overlay" class="hidden">
-    <div id="screenshot-preview">
-      <img id="screenshot-preview-img" src="" alt="Screenshot preview">
-      <div class="screenshot-preview-actions">
-        <button id="screenshot-copy" class="btn-primary">Copy to Clipboard</button>
-        <button id="screenshot-delete" class="btn-danger">Delete</button>
-        <button id="screenshot-close" class="btn-secondary">Close</button>
+        <button id="add-workspace" class="workspace-add-btn">+ New Workspace</button>
       </div>
     </div>
-  </div>
 
-  <!-- Modal for creating/editing workspaces -->
-  <div id="modal-overlay" class="hidden">
-    <div id="modal">
-      <h3 id="modal-title">New Workspace</h3>
-      <input type="text" id="workspace-name-input" placeholder="Workspace name..." autofocus>
-      <div class="modal-actions">
-        <button id="modal-cancel" class="btn-secondary">Cancel</button>
-        <button id="modal-confirm" class="btn-primary">Create</button>
+    <!-- Empty State Overlay -->
+    <div id="empty-state-overlay" class="hidden">
+      <div class="empty-icon">🚀</div>
+      <h2>Welcome to Outer Rim</h2>
+      <p>Create a workspace to get started</p>
+      <button id="empty-create-workspace">Create Workspace</button>
+    </div>
+
+    <!-- Workspace Modal -->
+    <div id="modal-overlay" class="hidden">
+      <div id="modal">
+        <h3 id="modal-title">New Workspace</h3>
+        <input type="text" id="workspace-name-input" placeholder="Workspace name">
+        <div class="modal-actions">
+          <button id="modal-cancel" class="btn-secondary">Cancel</button>
+          <button id="modal-confirm" class="btn-primary">Create</button>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- Modal for new tab URL -->
-  <div id="tab-modal-overlay" class="hidden">
-    <div id="tab-modal">
-      <h3>New Tab</h3>
-      <input type="text" id="tab-url-input" placeholder="Enter URL or search..." autofocus>
-      <div class="quick-links">
-        <button class="quick-link" data-url="https://claude.ai/new">Claude Chat</button>
-        <button class="quick-link" data-url="https://github.com">GitHub</button>
-        <button class="quick-link" data-url="https://docs.google.com">Google Docs</button>
-        <button class="quick-link" data-url="https://chat.openai.com">ChatGPT</button>
+    <!-- Tab Modal -->
+    <div id="tab-modal-overlay" class="hidden">
+      <div id="tab-modal">
+        <h3>New Tab</h3>
+        <input type="text" id="tab-url-input" placeholder="Enter URL or search term">
+        <div class="quick-links">
+          <button class="quick-link" data-url="https://claude.ai">Claude</button>
+          <button class="quick-link" data-url="https://github.com">GitHub</button>
+          <button class="quick-link" data-url="https://google.com">Google</button>
+        </div>
+        <div class="modal-actions">
+          <button id="tab-modal-cancel" class="btn-secondary">Cancel</button>
+          <button id="tab-modal-confirm" class="btn-primary">Open</button>
+        </div>
       </div>
-      <div class="modal-actions">
-        <button id="tab-modal-cancel" class="btn-secondary">Cancel</button>
-        <button id="tab-modal-confirm" class="btn-primary">Open</button>
+    </div>
+
+    <!-- Profile Modal -->
+    <div id="profile-modal-overlay" class="hidden">
+      <div id="profile-modal">
+        <h3>Manage Session Profiles</h3>
+        <p class="profile-modal-desc">Each profile has isolated cookies/sessions. Use different profiles to login as different users.</p>
+        <div id="profile-list"></div>
+        <div class="profile-add-row">
+          <input type="text" id="new-profile-input" placeholder="New profile name...">
+          <button id="add-profile-btn" class="btn-primary">Add</button>
+        </div>
+        <div class="modal-actions">
+          <button id="profile-modal-close" class="btn-secondary">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Screenshot Preview Modal -->
+    <div id="screenshot-preview-overlay" class="hidden">
+      <div id="screenshot-preview">
+        <img id="screenshot-preview-img" src="" alt="Screenshot preview">
+        <div class="screenshot-preview-actions">
+          <button id="screenshot-copy" class="btn-primary">Copy to Clipboard</button>
+          <button id="screenshot-delete" class="btn-danger">Delete</button>
+          <button id="screenshot-close" class="btn-secondary">Close</button>
+        </div>
       </div>
     </div>
   </div>
