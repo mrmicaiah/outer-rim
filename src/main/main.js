@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, nativeImage, clipboard, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, nativeImage, clipboard, Menu, session } = require('electron');
 const path = require('path');
 const Store = require('./store');
 const fs = require('fs');
@@ -37,6 +37,19 @@ function createWindow() {
   
   // Watch for new screenshots
   watchScreenshots();
+  
+  // Initialize default profile if none exist
+  initializeProfiles();
+}
+
+// Initialize profiles
+function initializeProfiles() {
+  const profiles = store.get('profiles') || [];
+  if (profiles.length === 0) {
+    store.set('profiles', [
+      { id: 'default', name: 'Default', createdAt: new Date().toISOString() }
+    ]);
+  }
 }
 
 // Create application menu with Edit menu for copy/paste
@@ -217,6 +230,67 @@ ipcMain.handle('notes:update', (event, workspaceId, notes) => {
     store.set('workspaces', workspaces);
   }
   return notes;
+});
+
+// ============================================
+// PROFILES IPC HANDLERS
+// ============================================
+
+ipcMain.handle('profiles:getAll', () => {
+  return store.get('profiles') || [{ id: 'default', name: 'Default', createdAt: new Date().toISOString() }];
+});
+
+ipcMain.handle('profiles:create', (event, name) => {
+  const profiles = store.get('profiles') || [];
+  const id = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+  
+  // Ensure unique ID
+  let uniqueId = id;
+  let counter = 1;
+  while (profiles.some(p => p.id === uniqueId)) {
+    uniqueId = `${id}-${counter}`;
+    counter++;
+  }
+  
+  const profile = {
+    id: uniqueId,
+    name: name,
+    createdAt: new Date().toISOString()
+  };
+  
+  profiles.push(profile);
+  store.set('profiles', profiles);
+  return profile;
+});
+
+ipcMain.handle('profiles:delete', (event, id) => {
+  if (id === 'default') {
+    return { error: 'Cannot delete default profile' };
+  }
+  
+  let profiles = store.get('profiles') || [];
+  profiles = profiles.filter(p => p.id !== id);
+  store.set('profiles', profiles);
+  
+  // Clear session data for this profile
+  try {
+    const ses = session.fromPartition(`persist:profile-${id}`);
+    ses.clearStorageData();
+  } catch (e) {
+    console.error('Error clearing session:', e);
+  }
+  
+  return profiles;
+});
+
+ipcMain.handle('profiles:rename', (event, id, name) => {
+  const profiles = store.get('profiles') || [];
+  const profile = profiles.find(p => p.id === id);
+  if (profile) {
+    profile.name = name;
+    store.set('profiles', profiles);
+  }
+  return profiles;
 });
 
 // ============================================
