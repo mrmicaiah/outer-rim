@@ -2,6 +2,7 @@
 // CLAUDE COMMANDER - Left Pane Chat Interface
 // Persistent memory, multiple chats, projects
 // Local file operations + Git push/pull
+// Auto-generates commit messages from diff
 // ============================================
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
@@ -218,16 +219,88 @@ async function checkGitStatus() {
   }
 }
 
+async function generateCommitMessage(projectPath) {
+  if (!apiKey) return null;
+  
+  try {
+    // Get git diff --stat for a summary of changes
+    const diffResult = await window.outerRim.terminal.run(`cd "${projectPath}" && git diff --stat HEAD 2>/dev/null || git diff --stat 2>/dev/null`);
+    const diff = diffResult.stdout || '';
+    
+    if (!diff.trim()) {
+      // Try staged changes
+      const stagedResult = await window.outerRim.terminal.run(`cd "${projectPath}" && git diff --stat --cached 2>/dev/null`);
+      if (!stagedResult.stdout?.trim()) return 'Update files';
+    }
+    
+    // Also get the actual diff for context (limited)
+    const fullDiffResult = await window.outerRim.terminal.run(`cd "${projectPath}" && git diff HEAD --no-color 2>/dev/null | head -200`);
+    const fullDiff = fullDiffResult.stdout || '';
+    
+    const response = await fetch(ANTHROPIC_API, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 100,
+        messages: [{
+          role: 'user',
+          content: `Generate a concise git commit message (max 72 chars) for these changes. Use conventional commit format (feat:, fix:, refactor:, style:, docs:, etc). No quotes, no explanation, just the message.
+
+Diff summary:
+${diff}
+
+Changes:
+${fullDiff.slice(0, 3000)}`
+        }]
+      })
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      let message = data.content?.[0]?.text?.trim() || 'Update files';
+      // Clean up the message
+      message = message.replace(/^["']|["']$/g, '').trim();
+      if (message.length > 72) message = message.slice(0, 69) + '...';
+      return message;
+    }
+  } catch (err) {
+    console.error('Failed to generate commit message:', err);
+  }
+  
+  return null;
+}
+
 async function gitPush() {
   const project = getActiveProject();
   if (!project?.localPath) return;
   
   const messageInput = document.getElementById('commit-message');
-  const message = messageInput.value.trim() || 'Update from Outer Rim';
+  let message = messageInput.value.trim();
   const pushBtn = document.getElementById('git-push-btn');
   const statusText = document.getElementById('git-status-text');
   
   pushBtn.disabled = true;
+  
+  // If no message, auto-generate one
+  if (!message) {
+    pushBtn.textContent = 'Generating...';
+    statusText.textContent = 'Generating commit message...';
+    
+    const generated = await generateCommitMessage(project.localPath);
+    if (generated) {
+      message = generated;
+      messageInput.value = message; // Show what we generated
+    } else {
+      message = 'Update from Outer Rim';
+    }
+  }
+  
   pushBtn.textContent = 'Pushing...';
   statusText.textContent = 'Pushing...';
   
