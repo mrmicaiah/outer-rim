@@ -1,6 +1,6 @@
 // ============================================
 // OUTER RIM - Renderer Application
-// With Browser Features: Copy/Paste, DevTools, Context Menu
+// With Session Profiles for Multi-User Testing
 // ============================================
 
 function uuidv4() {
@@ -12,6 +12,8 @@ let workspaces = [];
 let activeWorkspace = null;
 let activePane = 'left';
 let scratchpadContent = '';
+let profiles = [];
+let selectedProfiles = { left: 'default', right: 'default' };
 
 // Resizer state
 let currentResizer = null;
@@ -31,6 +33,7 @@ const modalOverlay = document.getElementById('modal-overlay');
 const workspaceNameInput = document.getElementById('workspace-name-input');
 const tabModalOverlay = document.getElementById('tab-modal-overlay');
 const tabUrlInput = document.getElementById('tab-url-input');
+const profileModalOverlay = document.getElementById('profile-modal-overlay');
 
 // ============================================
 // INITIALIZATION
@@ -43,6 +46,10 @@ async function init() {
   if (active) {
     activeWorkspace = workspaces.find(w => w.id === active.id);
   }
+  
+  // Load profiles
+  profiles = await window.outerRim.profiles.getAll();
+  updateProfileSelectors();
   
   // Load scratchpad
   scratchpadContent = await window.outerRim.scratchpad.get() || '';
@@ -81,6 +88,90 @@ async function init() {
   window.outerRim.onMenuToggleDevTools(() => {
     toggleActiveWebviewDevTools();
   });
+}
+
+// ============================================
+// PROFILE MANAGEMENT
+// ============================================
+
+function updateProfileSelectors() {
+  document.querySelectorAll('.profile-select').forEach(select => {
+    const pane = select.dataset.pane;
+    const currentValue = selectedProfiles[pane] || 'default';
+    
+    select.innerHTML = profiles.map(p => 
+      `<option value="${p.id}" ${p.id === currentValue ? 'selected' : ''}>${escapeHtml(p.name)}</option>`
+    ).join('');
+  });
+}
+
+function openProfileModal() {
+  renderProfileList();
+  profileModalOverlay.classList.remove('hidden');
+  document.getElementById('new-profile-input').focus();
+}
+
+function closeProfileModal() {
+  profileModalOverlay.classList.add('hidden');
+}
+
+function renderProfileList() {
+  const list = document.getElementById('profile-list');
+  list.innerHTML = profiles.map(p => `
+    <div class="profile-item" data-id="${p.id}">
+      <div>
+        <span class="profile-item-name">${escapeHtml(p.name)}</span>
+        ${p.id === 'default' ? '<span class="profile-item-default">(cannot delete)</span>' : ''}
+      </div>
+      <div class="profile-item-actions">
+        ${p.id !== 'default' ? `<button class="delete" title="Delete">🗑️</button>` : ''}
+      </div>
+    </div>
+  `).join('');
+  
+  // Add delete handlers
+  list.querySelectorAll('.profile-item-actions .delete').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const item = e.target.closest('.profile-item');
+      const id = item.dataset.id;
+      if (confirm(`Delete profile "${profiles.find(p => p.id === id)?.name}"? This will clear all saved logins for this profile.`)) {
+        await deleteProfile(id);
+      }
+    });
+  });
+}
+
+async function addProfile() {
+  const input = document.getElementById('new-profile-input');
+  const name = input.value.trim();
+  if (!name) return;
+  
+  const profile = await window.outerRim.profiles.create(name);
+  profiles.push(profile);
+  
+  input.value = '';
+  renderProfileList();
+  updateProfileSelectors();
+}
+
+async function deleteProfile(id) {
+  await window.outerRim.profiles.delete(id);
+  profiles = profiles.filter(p => p.id !== id);
+  
+  // Reset any panes using this profile to default
+  if (selectedProfiles.left === id) selectedProfiles.left = 'default';
+  if (selectedProfiles.right === id) selectedProfiles.right = 'default';
+  
+  renderProfileList();
+  updateProfileSelectors();
+  renderPanes(); // Refresh webviews
+}
+
+function getPartitionForProfile(profileId) {
+  if (profileId === 'default') {
+    return 'persist:outerrim';
+  }
+  return `persist:profile-${profileId}`;
 }
 
 // ============================================
@@ -404,8 +495,8 @@ async function createWorkspace(name) {
     id: uuidv4(),
     name: name,
     panes: {
-      left: { tabs: [], activeTabId: null },
-      right: { tabs: [], activeTabId: null }
+      left: { tabs: [], activeTabId: null, profileId: 'default' },
+      right: { tabs: [], activeTabId: null, profileId: 'default' }
     },
     notes: '',
     createdAt: new Date().toISOString()
@@ -414,6 +505,10 @@ async function createWorkspace(name) {
   await window.outerRim.workspace.create(workspace);
   workspaces.push(workspace);
   activeWorkspace = workspace;
+  
+  // Reset selected profiles
+  selectedProfiles = { left: 'default', right: 'default' };
+  updateProfileSelectors();
   
   renderWorkspaces();
   renderPanes();
@@ -424,6 +519,13 @@ async function createWorkspace(name) {
 async function switchWorkspace(workspaceId) {
   activeWorkspace = workspaces.find(w => w.id === workspaceId);
   await window.outerRim.workspace.setActive(workspaceId);
+  
+  // Load workspace profile selections
+  if (activeWorkspace?.panes) {
+    selectedProfiles.left = activeWorkspace.panes.left?.profileId || 'default';
+    selectedProfiles.right = activeWorkspace.panes.right?.profileId || 'default';
+    updateProfileSelectors();
+  }
   
   renderWorkspaces();
   renderPanes();
@@ -479,8 +581,8 @@ function renderPane(paneName) {
   
   if (!activeWorkspace.panes) {
     activeWorkspace.panes = {
-      left: { tabs: activeWorkspace.tabs || [], activeTabId: activeWorkspace.activeTabId || null },
-      right: { tabs: [], activeTabId: null }
+      left: { tabs: activeWorkspace.tabs || [], activeTabId: activeWorkspace.activeTabId || null, profileId: 'default' },
+      right: { tabs: [], activeTabId: null, profileId: 'default' }
     };
     delete activeWorkspace.tabs;
     delete activeWorkspace.activeTabId;
@@ -489,10 +591,18 @@ function renderPane(paneName) {
   
   const pane = activeWorkspace.panes[paneName];
   
+  // Ensure profileId exists
+  if (!pane.profileId) {
+    pane.profileId = 'default';
+  }
+  selectedProfiles[paneName] = pane.profileId;
+  
   const emptyState = webviewContainer.querySelector('.pane-empty-state');
   const hasTabs = pane.tabs.length > 0;
   emptyState.style.display = hasTabs ? 'none' : 'block';
   navBar.classList.toggle('hidden', !hasTabs);
+  
+  const partition = getPartitionForProfile(pane.profileId);
   
   pane.tabs.forEach(tab => {
     const item = document.createElement('div');
@@ -503,9 +613,15 @@ function renderPane(paneName) {
     const favicon = getFaviconUrl(tab.url);
     const displayTitle = simplifyTitle(tab.title, tab.url);
     
+    // Show profile badge if not default
+    const profileBadge = pane.profileId !== 'default' 
+      ? `<span class="pane-tab-profile-badge">${escapeHtml(profiles.find(p => p.id === pane.profileId)?.name || pane.profileId)}</span>`
+      : '';
+    
     item.innerHTML = `
       <img class="pane-tab-favicon" src="${favicon}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><rect fill=%22%23666%22 width=%2216%22 height=%2216%22 rx=%222%22/></svg>'">
       <span class="pane-tab-title" title="${escapeHtml(tab.title || '')}">${escapeHtml(displayTitle)}</span>
+      ${profileBadge}
       <button class="pane-tab-close" title="Close tab">×</button>
     `;
     
@@ -526,7 +642,7 @@ function renderPane(paneName) {
     webview.id = `webview-${paneName}-${tab.id}`;
     webview.src = tab.url;
     webview.className = pane.activeTabId === tab.id ? 'active' : '';
-    webview.setAttribute('partition', 'persist:outerrim');
+    webview.setAttribute('partition', partition);
     webview.setAttribute('allowpopups', 'true');
     
     webview.addEventListener('dom-ready', () => {
@@ -747,6 +863,18 @@ async function updateTabUrl(paneName, tabId, url) {
       }
     }
   }
+}
+
+async function changeProfile(paneName, profileId) {
+  if (!activeWorkspace) return;
+  
+  selectedProfiles[paneName] = profileId;
+  activeWorkspace.panes[paneName].profileId = profileId;
+  
+  await window.outerRim.workspace.update(activeWorkspace);
+  
+  // Re-render the pane to apply new partition
+  renderPane(paneName);
 }
 
 // ============================================
@@ -1069,6 +1197,28 @@ function setupEventListeners() {
     });
   });
   
+  // Profile selectors
+  document.querySelectorAll('.profile-select').forEach(select => {
+    select.addEventListener('change', (e) => {
+      changeProfile(select.dataset.pane, e.target.value);
+    });
+  });
+  
+  // Profile manage buttons
+  document.querySelectorAll('.profile-manage-btn').forEach(btn => {
+    btn.addEventListener('click', openProfileModal);
+  });
+  
+  // Profile modal
+  document.getElementById('profile-modal-close').addEventListener('click', closeProfileModal);
+  document.getElementById('add-profile-btn').addEventListener('click', addProfile);
+  document.getElementById('new-profile-input').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') addProfile();
+  });
+  profileModalOverlay.addEventListener('click', (e) => {
+    if (e.target === profileModalOverlay) closeProfileModal();
+  });
+  
   document.querySelectorAll('.nav-back').forEach(btn => {
     btn.addEventListener('click', () => navigateBack(btn.dataset.pane));
   });
@@ -1230,6 +1380,7 @@ function setupEventListeners() {
     if (e.key === 'Escape') {
       closeWorkspaceModal();
       closeTabModal();
+      closeProfileModal();
       closeScreenshotPreview();
     }
   });
