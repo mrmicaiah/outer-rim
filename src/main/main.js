@@ -4,10 +4,12 @@ const Store = require('./store');
 const fs = require('fs');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
+const { registerAgentHandlers } = require('./agent');
 
 const store = new Store();
 
 let mainWindow;
+let agentLifecycle;
 
 // Screenshot folder path
 const SCREENSHOTS_PATH = path.join(os.homedir(), 'Desktop', 'screen_shot_data');
@@ -338,6 +340,7 @@ function watchScreenshots() {
 
 app.whenReady().then(() => {
   createAppMenu();
+  agentLifecycle = registerAgentHandlers();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -346,6 +349,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (screenshotWatcher) screenshotWatcher.close();
+  if (agentLifecycle) agentLifecycle.cleanupAll();
   if (process.platform !== 'darwin') app.quit();
 });
 
