@@ -568,7 +568,7 @@ function renderMessages() {
       let html = '';
       msg.toolCalls.forEach(tc => {
         html += `<div class="tool-call"><span class="tool-name">🔧 ${tc.name}</span>`;
-        if (tc.input?.path) html += `<span class="tool-path">${tc.input.path}</span>`;
+        if (tc.input?.path !== undefined) html += `<span class="tool-path">${tc.input.path || '.'}</span>`;
         html += '</div>';
       });
       if (msg.content) {
@@ -609,10 +609,8 @@ function escapeHtml(text) {
 // ============================================
 
 function autoExpandTextarea(textarea) {
-  // Reset height to auto to get the correct scrollHeight
   textarea.style.height = 'auto';
-  // Set height to scrollHeight, but respect max-height from CSS
-  const maxHeight = 200; // matches CSS max-height
+  const maxHeight = 200;
   const newHeight = Math.min(textarea.scrollHeight, maxHeight);
   textarea.style.height = newHeight + 'px';
 }
@@ -682,7 +680,6 @@ async function sendMessage() {
   chat.messages.push({ role: 'user', content: message });
   chat.updatedAt = Date.now();
   input.value = '';
-  // Reset textarea height after clearing
   input.style.height = 'auto';
   renderMessages();
   scheduleSave();
@@ -696,13 +693,11 @@ async function sendMessage() {
   container.scrollTop = container.scrollHeight;
   
   try {
-    // Build API messages (excluding our internal toolCalls metadata)
-    const apiMessages = chat.messages.map(m => {
-      if (m.role === 'user' || m.role === 'assistant') {
-        return { role: m.role, content: m.content };
-      }
-      return m;
-    }).filter(m => m.content); // Filter out empty messages
+    // Build initial messages - only use simple string content for history
+    let apiMessages = chat.messages
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .filter(m => typeof m.content === 'string' && m.content.trim())
+      .map(m => ({ role: m.role, content: m.content }));
     
     let response = await fetch(ANTHROPIC_API, {
       method: 'POST',
@@ -721,10 +716,16 @@ async function sendMessage() {
       })
     });
     
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('API error response:', errorData);
+      throw new Error(`API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+    }
     let data = await response.json();
     
-    // Handle tool use loop
+    // Handle tool use loop - maintain separate conversation for API
+    let conversationMessages = [...apiMessages];
+    
     while (data.stop_reason === 'tool_use') {
       loadingDiv.innerHTML = '<div class="message-content">Using tools...</div>';
       
@@ -732,7 +733,7 @@ async function sendMessage() {
       const textBlocks = data.content.filter(b => b.type === 'text');
       const textContent = textBlocks.map(b => b.text).join('\n');
       
-      // Store assistant message with tool calls for display
+      // Store for UI display
       const assistantMsg = {
         role: 'assistant',
         content: textContent,
@@ -754,12 +755,11 @@ async function sendMessage() {
         });
       }
       
-      // Add tool results as user message and continue
-      const updatedMessages = [
-        ...apiMessages,
-        { role: 'assistant', content: data.content },
-        { role: 'user', content: toolResults }
-      ];
+      // Add assistant response and tool results to conversation
+      conversationMessages.push({ role: 'assistant', content: data.content });
+      conversationMessages.push({ role: 'user', content: toolResults });
+      
+      console.log('Sending continuation with messages:', JSON.stringify(conversationMessages, null, 2));
       
       response = await fetch(ANTHROPIC_API, {
         method: 'POST',
@@ -774,16 +774,16 @@ async function sendMessage() {
           max_tokens: 8096,
           system: buildSystemPrompt(),
           tools: TOOLS,
-          messages: updatedMessages
+          messages: conversationMessages
         })
       });
       
-      if (!response.ok) throw new Error(`API error: ${response.status}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('API error response:', errorData);
+        throw new Error(`API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+      }
       data = await response.json();
-      
-      // Update apiMessages for potential next iteration
-      apiMessages.push({ role: 'assistant', content: data.content });
-      apiMessages.push({ role: 'user', content: toolResults });
     }
     
     // Final response
@@ -897,34 +897,28 @@ function setupCommanderListeners() {
   
   document.getElementById('send-btn').addEventListener('click', sendMessage);
   
-  // Commander input: Enter sends, Shift+Enter adds newline, auto-expand
   const commanderInput = document.getElementById('commander-input');
   
   commanderInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       if (e.shiftKey) {
-        // Shift+Enter: allow default behavior (newline)
-        return;
+        return; // Allow newline
       } else {
-        // Enter alone: send message
         e.preventDefault();
         sendMessage();
       }
     }
   });
   
-  // Auto-expand on input
   commanderInput.addEventListener('input', () => {
     autoExpandTextarea(commanderInput);
   });
   
   document.getElementById('clear-chat-btn').addEventListener('click', clearChat);
   
-  // Git controls
   document.getElementById('git-push-btn').addEventListener('click', gitPush);
   document.getElementById('git-pull-btn').addEventListener('click', gitPull);
   
-  // Project modal
   document.getElementById('project-modal-save').addEventListener('click', saveProjectModal);
   document.getElementById('project-modal-cancel').addEventListener('click', closeProjectModal);
   document.getElementById('project-modal-delete').addEventListener('click', deleteProjectModal);
