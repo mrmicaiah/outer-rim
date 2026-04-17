@@ -1,6 +1,6 @@
 // ============================================
 // OUTER RIM - Renderer Application
-// With Session Profiles - Preserves webview state across profile switches
+// Right pane: Browser tabs | Left pane: Commander (handled separately)
 // ============================================
 
 function uuidv4() {
@@ -10,12 +10,11 @@ function uuidv4() {
 // State
 let workspaces = [];
 let activeWorkspace = null;
-let activePane = 'left';
+let activePane = 'right'; // Default to right since left is now Commander
 let scratchpadContent = '';
 let profiles = [];
 
-// Track which webviews have been created (to avoid recreating them)
-// Key: `${paneName}-${profileId}-${tabId}`, Value: true
+// Track which webviews have been created
 const createdWebviews = new Set();
 
 // Resizer state
@@ -75,7 +74,7 @@ async function init() {
   document.body.appendChild(resizeOverlay);
   
   renderWorkspaces();
-  renderPanes();
+  renderRightPane();
   updateNotepad();
   updateEmptyState();
   setupEventListeners();
@@ -98,27 +97,13 @@ async function init() {
 function migrateWorkspaceStructure(workspace) {
   if (!workspace.panes) {
     workspace.panes = {
-      left: { activeProfileId: 'default', profiles: { 'default': { tabs: [], activeTabId: null } } },
       right: { activeProfileId: 'default', profiles: { 'default': { tabs: [], activeTabId: null } } }
     };
     window.outerRim.workspace.update(workspace);
     return;
   }
   
-  const leftPane = workspace.panes.left;
-  if (leftPane && !leftPane.profiles) {
-    const oldProfileId = leftPane.profileId || 'default';
-    workspace.panes.left = {
-      activeProfileId: oldProfileId,
-      profiles: {
-        [oldProfileId]: { tabs: leftPane.tabs || [], activeTabId: leftPane.activeTabId || null }
-      }
-    };
-    if (oldProfileId !== 'default') {
-      workspace.panes.left.profiles['default'] = { tabs: [], activeTabId: null };
-    }
-  }
-  
+  // Migrate right pane if needed
   const rightPane = workspace.panes.right;
   if (rightPane && !rightPane.profiles) {
     const oldProfileId = rightPane.profileId || 'default';
@@ -131,9 +116,14 @@ function migrateWorkspaceStructure(workspace) {
     if (oldProfileId !== 'default') {
       workspace.panes.right.profiles['default'] = { tabs: [], activeTabId: null };
     }
+    window.outerRim.workspace.update(workspace);
   }
   
-  window.outerRim.workspace.update(workspace);
+  // Ensure right pane exists
+  if (!workspace.panes.right) {
+    workspace.panes.right = { activeProfileId: 'default', profiles: { 'default': { tabs: [], activeTabId: null } } };
+    window.outerRim.workspace.update(workspace);
+  }
 }
 
 function ensurePaneProfile(pane, profileId) {
@@ -142,16 +132,16 @@ function ensurePaneProfile(pane, profileId) {
   return pane.profiles[profileId];
 }
 
-function getCurrentPaneData(paneName) {
-  if (!activeWorkspace?.panes?.[paneName]) return null;
-  const pane = activeWorkspace.panes[paneName];
+function getCurrentPaneData() {
+  if (!activeWorkspace?.panes?.right) return null;
+  const pane = activeWorkspace.panes.right;
   const profileId = pane.activeProfileId || 'default';
   return ensurePaneProfile(pane, profileId);
 }
 
-function getCurrentProfileId(paneName) {
-  if (!activeWorkspace?.panes?.[paneName]) return 'default';
-  return activeWorkspace.panes[paneName].activeProfileId || 'default';
+function getCurrentProfileId() {
+  if (!activeWorkspace?.panes?.right) return 'default';
+  return activeWorkspace.panes.right.activeProfileId || 'default';
 }
 
 // ============================================
@@ -160,8 +150,7 @@ function getCurrentProfileId(paneName) {
 
 function updateProfileSelectors() {
   document.querySelectorAll('.profile-select').forEach(select => {
-    const pane = select.dataset.pane;
-    const currentValue = getCurrentProfileId(pane);
+    const currentValue = getCurrentProfileId();
     select.innerHTML = profiles.map(p => 
       `<option value="${p.id}" ${p.id === currentValue ? 'selected' : ''}>${escapeHtml(p.name)}</option>`
     ).join('');
@@ -221,30 +210,29 @@ async function deleteProfile(id) {
   profiles = profiles.filter(p => p.id !== id);
   
   if (activeWorkspace) {
-    ['left', 'right'].forEach(paneName => {
-      const pane = activeWorkspace.panes[paneName];
-      
-      // Remove webviews for deleted profile
-      if (pane.profiles && pane.profiles[id]) {
-        pane.profiles[id].tabs.forEach(tab => {
-          const webviewKey = `${paneName}-${id}-${tab.id}`;
-          const webview = document.getElementById(`webview-${paneName}-${id}-${tab.id}`);
-          if (webview) webview.remove();
-          createdWebviews.delete(webviewKey);
-        });
-        delete pane.profiles[id];
-      }
-      
-      if (pane.activeProfileId === id) {
-        pane.activeProfileId = 'default';
-      }
-    });
+    const pane = activeWorkspace.panes.right;
+    
+    // Remove webviews for deleted profile
+    if (pane.profiles && pane.profiles[id]) {
+      pane.profiles[id].tabs.forEach(tab => {
+        const webviewKey = `right-${id}-${tab.id}`;
+        const webview = document.getElementById(`webview-right-${id}-${tab.id}`);
+        if (webview) webview.remove();
+        createdWebviews.delete(webviewKey);
+      });
+      delete pane.profiles[id];
+    }
+    
+    if (pane.activeProfileId === id) {
+      pane.activeProfileId = 'default';
+    }
+    
     await window.outerRim.workspace.update(activeWorkspace);
   }
   
   renderProfileList();
   updateProfileSelectors();
-  renderPanes();
+  renderRightPane();
 }
 
 function getPartitionForProfile(profileId) {
@@ -280,7 +268,7 @@ function handleMouseMove(e) {
     const delta = e.clientX - startX;
     const newLeftWidth = startLeftWidth + delta;
     const newRightWidth = startRightWidth - delta;
-    if (newLeftWidth >= 200 && newRightWidth >= 200) {
+    if (newLeftWidth >= 280 && newRightWidth >= 300) {
       leftPane.style.width = newLeftWidth + 'px';
       leftPane.style.flex = 'none';
       rightPane.style.width = newRightWidth + 'px';
@@ -325,17 +313,17 @@ function handleMouseMove(e) {
 
 function toggleActiveWebviewDevTools() {
   if (!activeWorkspace) return;
-  const paneData = getCurrentPaneData(activePane);
-  const profileId = getCurrentProfileId(activePane);
+  const paneData = getCurrentPaneData();
+  const profileId = getCurrentProfileId();
   if (!paneData?.activeTabId) return;
   
-  const webview = document.getElementById(`webview-${activePane}-${profileId}-${paneData.activeTabId}`);
+  const webview = document.getElementById(`webview-right-${profileId}-${paneData.activeTabId}`);
   if (webview) {
     webview.isDevToolsOpened() ? webview.closeDevTools() : webview.openDevTools();
   }
 }
 
-function setupWebviewContextMenu(webview, paneName) {
+function setupWebviewContextMenu(webview) {
   webview.addEventListener('context-menu', (e) => {
     e.preventDefault();
     const params = e.params;
@@ -346,7 +334,7 @@ function setupWebviewContextMenu(webview, paneName) {
     let menuItems = [];
     
     if (hasLink) {
-      menuItems.push({ label: 'Open Link in New Tab', action: () => createTab(paneName, params.linkURL) });
+      menuItems.push({ label: 'Open Link in New Tab', action: () => createTab(params.linkURL) });
       menuItems.push({ label: 'Copy Link', action: () => navigator.clipboard.writeText(params.linkURL) });
       menuItems.push({ type: 'separator' });
     }
@@ -477,7 +465,6 @@ async function createWorkspace(name) {
     id: uuidv4(),
     name,
     panes: {
-      left: { activeProfileId: 'default', profiles: { 'default': { tabs: [], activeTabId: null } } },
       right: { activeProfileId: 'default', profiles: { 'default': { tabs: [], activeTabId: null } } }
     },
     notes: '',
@@ -490,7 +477,7 @@ async function createWorkspace(name) {
   
   updateProfileSelectors();
   renderWorkspaces();
-  renderPanes();
+  renderRightPane();
   updateNotepad();
   updateEmptyState();
 }
@@ -507,7 +494,7 @@ async function switchWorkspace(workspaceId) {
   
   updateProfileSelectors();
   renderWorkspaces();
-  renderPanes();
+  renderRightPane();
   updateNotepad();
 }
 
@@ -523,7 +510,7 @@ async function deleteWorkspace(workspaceId) {
   }
   
   renderWorkspaces();
-  renderPanes();
+  renderRightPane();
   updateNotepad();
   updateEmptyState();
 }
@@ -538,18 +525,13 @@ async function renameWorkspace(workspaceId, newName) {
 }
 
 // ============================================
-// DUAL-PANE TAB MANAGEMENT
+// RIGHT PANE TAB MANAGEMENT
 // ============================================
 
-function renderPanes() {
-  renderPane('left');
-  renderPane('right');
-}
-
-function renderPane(paneName) {
-  const tabList = document.querySelector(`.pane-tab-list[data-pane="${paneName}"]`);
-  const webviewContainer = document.querySelector(`.pane-webview-container[data-pane="${paneName}"]`);
-  const navBar = document.querySelector(`.pane-nav-bar[data-pane="${paneName}"]`);
+function renderRightPane() {
+  const tabList = document.querySelector('.pane-tab-list[data-pane="right"]');
+  const webviewContainer = document.querySelector('.pane-webview-container[data-pane="right"]');
+  const navBar = document.querySelector('.pane-nav-bar[data-pane="right"]');
   
   tabList.innerHTML = '';
   
@@ -562,7 +544,7 @@ function renderPane(paneName) {
   
   migrateWorkspaceStructure(activeWorkspace);
   
-  const pane = activeWorkspace.panes[paneName];
+  const pane = activeWorkspace.panes.right;
   const activeProfileId = pane.activeProfileId || 'default';
   const activeProfileData = ensurePaneProfile(pane, activeProfileId);
   
@@ -581,15 +563,14 @@ function renderPane(paneName) {
     const isActiveProfile = profileId === activeProfileId;
     
     profileData.tabs.forEach(tab => {
-      const webviewKey = `${paneName}-${profileId}-${tab.id}`;
-      const webviewId = `webview-${paneName}-${profileId}-${tab.id}`;
+      const webviewKey = `right-${profileId}-${tab.id}`;
+      const webviewId = `webview-right-${profileId}-${tab.id}`;
       
       // Only render tab items for active profile
       if (isActiveProfile) {
         const item = document.createElement('div');
         item.className = `pane-tab-item ${profileData.activeTabId === tab.id ? 'active' : ''}`;
         item.dataset.id = tab.id;
-        item.dataset.pane = paneName;
         item.dataset.profile = profileId;
         
         const favicon = getFaviconUrl(tab.url);
@@ -604,11 +585,11 @@ function renderPane(paneName) {
         `;
         
         item.addEventListener('click', (e) => {
-          if (!e.target.classList.contains('pane-tab-close')) switchTab(paneName, tab.id);
+          if (!e.target.classList.contains('pane-tab-close')) switchTab(tab.id);
         });
         item.querySelector('.pane-tab-close').addEventListener('click', (e) => {
           e.stopPropagation();
-          closeTab(paneName, tab.id);
+          closeTab(tab.id);
         });
         
         tabList.appendChild(item);
@@ -621,24 +602,22 @@ function renderPane(paneName) {
         webview.src = tab.url;
         webview.setAttribute('partition', partition);
         webview.setAttribute('allowpopups', 'true');
-        webview.dataset.pane = paneName;
         webview.dataset.profile = profileId;
         webview.dataset.tab = tab.id;
         
-        webview.addEventListener('dom-ready', () => setupWebviewContextMenu(webview, paneName));
-        webview.addEventListener('page-title-updated', (e) => updateTabTitle(paneName, tab.id, e.title, profileId));
+        webview.addEventListener('dom-ready', () => setupWebviewContextMenu(webview));
+        webview.addEventListener('page-title-updated', (e) => updateTabTitle(tab.id, e.title, profileId));
         webview.addEventListener('did-navigate', (e) => {
-          updateTabUrl(paneName, tab.id, e.url, profileId);
-          if (isActiveProfile) updateNavBar(paneName);
+          updateTabUrl(tab.id, e.url, profileId);
+          if (isActiveProfile) updateNavBar();
         });
         webview.addEventListener('did-navigate-in-page', (e) => {
           if (e.isMainFrame) {
-            updateTabUrl(paneName, tab.id, e.url, profileId);
-            if (isActiveProfile) updateNavBar(paneName);
+            updateTabUrl(tab.id, e.url, profileId);
+            if (isActiveProfile) updateNavBar();
           }
         });
-        webview.addEventListener('new-window', (e) => { e.preventDefault(); createTab(paneName, e.url); });
-        webview.addEventListener('focus', () => { activePane = paneName; });
+        webview.addEventListener('new-window', (e) => { e.preventDefault(); createTab(e.url); });
         
         webviewContainer.appendChild(webview);
         createdWebviews.add(webviewKey);
@@ -651,20 +630,20 @@ function renderPane(paneName) {
     });
   });
   
-  updateNavBar(paneName);
+  updateNavBar();
 }
 
-function updateNavBar(paneName) {
+function updateNavBar() {
   if (!activeWorkspace) return;
   
-  const paneData = getCurrentPaneData(paneName);
-  const profileId = getCurrentProfileId(paneName);
+  const paneData = getCurrentPaneData();
+  const profileId = getCurrentProfileId();
   if (!paneData?.activeTabId) return;
   
-  const webview = document.getElementById(`webview-${paneName}-${profileId}-${paneData.activeTabId}`);
-  const navUrl = document.querySelector(`.nav-url[data-pane="${paneName}"]`);
-  const navBack = document.querySelector(`.nav-back[data-pane="${paneName}"]`);
-  const navForward = document.querySelector(`.nav-forward[data-pane="${paneName}"]`);
+  const webview = document.getElementById(`webview-right-${profileId}-${paneData.activeTabId}`);
+  const navUrl = document.querySelector('.nav-url[data-pane="right"]');
+  const navBack = document.querySelector('.nav-back[data-pane="right"]');
+  const navForward = document.querySelector('.nav-forward[data-pane="right"]');
   
   if (webview && navUrl) {
     const tab = paneData.tabs.find(t => t.id === paneData.activeTabId);
@@ -679,8 +658,11 @@ function updateNavBar(paneName) {
   }
 }
 
-async function createTab(paneName, url) {
-  if (!activeWorkspace) return;
+async function createTab(url) {
+  if (!activeWorkspace) {
+    alert('Create a workspace first');
+    return;
+  }
   
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
     url = url.includes('.') && !url.includes(' ') ? 'https://' + url : `https://www.google.com/search?q=${encodeURIComponent(url)}`;
@@ -688,80 +670,85 @@ async function createTab(paneName, url) {
   
   const tab = { id: uuidv4(), url, title: 'Loading...', createdAt: new Date().toISOString() };
   
-  const paneData = getCurrentPaneData(paneName);
+  const paneData = getCurrentPaneData();
+  if (!paneData) {
+    console.error('No pane data available');
+    return;
+  }
+  
   paneData.tabs.push(tab);
   paneData.activeTabId = tab.id;
   
   await window.outerRim.workspace.update(activeWorkspace);
   workspaces[workspaces.findIndex(w => w.id === activeWorkspace.id)] = activeWorkspace;
   
-  renderPane(paneName);
+  renderRightPane();
 }
 
-async function switchTab(paneName, tabId) {
+async function switchTab(tabId) {
   if (!activeWorkspace) return;
   
-  const paneData = getCurrentPaneData(paneName);
-  const profileId = getCurrentProfileId(paneName);
+  const paneData = getCurrentPaneData();
+  const profileId = getCurrentProfileId();
   paneData.activeTabId = tabId;
   await window.outerRim.workspace.update(activeWorkspace);
   workspaces[workspaces.findIndex(w => w.id === activeWorkspace.id)] = activeWorkspace;
   
-  document.querySelector(`.pane-tab-list[data-pane="${paneName}"]`).querySelectorAll('.pane-tab-item').forEach(item => {
+  document.querySelector('.pane-tab-list[data-pane="right"]').querySelectorAll('.pane-tab-item').forEach(item => {
     item.classList.toggle('active', item.dataset.id === tabId);
   });
   
-  document.querySelector(`.pane-webview-container[data-pane="${paneName}"]`).querySelectorAll('webview').forEach(wv => {
-    wv.classList.toggle('active', wv.id === `webview-${paneName}-${profileId}-${tabId}`);
+  document.querySelector('.pane-webview-container[data-pane="right"]').querySelectorAll('webview').forEach(wv => {
+    wv.classList.toggle('active', wv.id === `webview-right-${profileId}-${tabId}`);
   });
   
-  updateNavBar(paneName);
+  updateNavBar();
 }
 
-function navigateBack(paneName) {
-  const paneData = getCurrentPaneData(paneName);
-  const profileId = getCurrentProfileId(paneName);
+function navigateBack() {
+  const paneData = getCurrentPaneData();
+  const profileId = getCurrentProfileId();
   if (!paneData?.activeTabId) return;
-  const webview = document.getElementById(`webview-${paneName}-${profileId}-${paneData.activeTabId}`);
+  const webview = document.getElementById(`webview-right-${profileId}-${paneData.activeTabId}`);
   if (webview?.canGoBack()) webview.goBack();
 }
 
-function navigateForward(paneName) {
-  const paneData = getCurrentPaneData(paneName);
-  const profileId = getCurrentProfileId(paneName);
+function navigateForward() {
+  const paneData = getCurrentPaneData();
+  const profileId = getCurrentProfileId();
   if (!paneData?.activeTabId) return;
-  const webview = document.getElementById(`webview-${paneName}-${profileId}-${paneData.activeTabId}`);
+  const webview = document.getElementById(`webview-right-${profileId}-${paneData.activeTabId}`);
   if (webview?.canGoForward()) webview.goForward();
 }
 
-function refreshActiveTab(paneName) {
-  const paneData = getCurrentPaneData(paneName);
-  const profileId = getCurrentProfileId(paneName);
+function refreshActiveTab() {
+  const paneData = getCurrentPaneData();
+  const profileId = getCurrentProfileId();
   if (!paneData?.activeTabId) return;
-  document.getElementById(`webview-${paneName}-${profileId}-${paneData.activeTabId}`)?.reload();
+  document.getElementById(`webview-right-${profileId}-${paneData.activeTabId}`)?.reload();
 }
 
-function navigateToUrl(paneName, url) {
-  const paneData = getCurrentPaneData(paneName);
-  const profileId = getCurrentProfileId(paneName);
+function navigateToUrl(url) {
+  const paneData = getCurrentPaneData();
+  const profileId = getCurrentProfileId();
   if (!paneData?.activeTabId) return;
   
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
     url = url.includes('.') && !url.includes(' ') ? 'https://' + url : `https://www.google.com/search?q=${encodeURIComponent(url)}`;
   }
   
-  const webview = document.getElementById(`webview-${paneName}-${profileId}-${paneData.activeTabId}`);
+  const webview = document.getElementById(`webview-right-${profileId}-${paneData.activeTabId}`);
   if (webview) webview.src = url;
 }
 
-async function closeTab(paneName, tabId) {
+async function closeTab(tabId) {
   if (!activeWorkspace) return;
   
-  const paneData = getCurrentPaneData(paneName);
-  const profileId = getCurrentProfileId(paneName);
+  const paneData = getCurrentPaneData();
+  const profileId = getCurrentProfileId();
   
-  const webviewKey = `${paneName}-${profileId}-${tabId}`;
-  document.getElementById(`webview-${paneName}-${profileId}-${tabId}`)?.remove();
+  const webviewKey = `right-${profileId}-${tabId}`;
+  document.getElementById(`webview-right-${profileId}-${tabId}`)?.remove();
   createdWebviews.delete(webviewKey);
   
   paneData.tabs = paneData.tabs.filter(t => t.id !== tabId);
@@ -770,13 +757,13 @@ async function closeTab(paneName, tabId) {
   await window.outerRim.workspace.update(activeWorkspace);
   workspaces[workspaces.findIndex(w => w.id === activeWorkspace.id)] = activeWorkspace;
   
-  renderPane(paneName);
+  renderRightPane();
 }
 
-async function updateTabTitle(paneName, tabId, title, profileId) {
+async function updateTabTitle(tabId, title, profileId) {
   if (!activeWorkspace) return;
   
-  const pane = activeWorkspace.panes[paneName];
+  const pane = activeWorkspace.panes.right;
   const profileData = pane.profiles?.[profileId];
   const tab = profileData?.tabs.find(t => t.id === tabId);
   
@@ -785,7 +772,7 @@ async function updateTabTitle(paneName, tabId, title, profileId) {
     await window.outerRim.workspace.update(activeWorkspace);
     
     if (profileId === pane.activeProfileId) {
-      const tabEl = document.querySelector(`.pane-tab-item[data-pane="${paneName}"][data-id="${tabId}"] .pane-tab-title`);
+      const tabEl = document.querySelector(`.pane-tab-item[data-id="${tabId}"] .pane-tab-title`);
       if (tabEl) {
         tabEl.textContent = simplifyTitle(title, tab.url);
         tabEl.title = title;
@@ -794,10 +781,10 @@ async function updateTabTitle(paneName, tabId, title, profileId) {
   }
 }
 
-async function updateTabUrl(paneName, tabId, url, profileId) {
+async function updateTabUrl(tabId, url, profileId) {
   if (!activeWorkspace) return;
   
-  const pane = activeWorkspace.panes[paneName];
+  const pane = activeWorkspace.panes.right;
   const profileData = pane.profiles?.[profileId];
   const tab = profileData?.tabs.find(t => t.id === tabId);
   
@@ -806,23 +793,22 @@ async function updateTabUrl(paneName, tabId, url, profileId) {
     await window.outerRim.workspace.update(activeWorkspace);
     
     if (profileId === pane.activeProfileId && profileData.activeTabId === tabId) {
-      const navUrl = document.querySelector(`.nav-url[data-pane="${paneName}"]`);
+      const navUrl = document.querySelector('.nav-url[data-pane="right"]');
       if (navUrl) navUrl.value = url;
     }
   }
 }
 
-async function changeProfile(paneName, profileId) {
+async function changeProfile(profileId) {
   if (!activeWorkspace) return;
   
-  const pane = activeWorkspace.panes[paneName];
+  const pane = activeWorkspace.panes.right;
   pane.activeProfileId = profileId;
   ensurePaneProfile(pane, profileId);
   
   await window.outerRim.workspace.update(activeWorkspace);
   
-  // Re-render pane - shows/hides webviews without recreating
-  renderPane(paneName);
+  renderRightPane();
   updateProfileSelectors();
 }
 
@@ -1067,9 +1053,8 @@ function confirmWorkspaceModal() {
   closeWorkspaceModal();
 }
 
-function openTabModal(paneName) {
+function openTabModal() {
   if (!activeWorkspace) { alert('Create a workspace first'); return; }
-  activePane = paneName;
   tabUrlInput.value = '';
   tabModalOverlay.classList.remove('hidden');
   tabUrlInput.focus();
@@ -1082,7 +1067,7 @@ function closeTabModal() {
 function confirmTabModal() {
   const url = tabUrlInput.value.trim();
   if (!url) return;
-  createTab(activePane, url);
+  createTab(url);
   closeTabModal();
 }
 
@@ -1097,12 +1082,11 @@ function setupEventListeners() {
   document.getElementById('add-workspace').addEventListener('click', openCreateWorkspaceModal);
   document.getElementById('empty-create-workspace').addEventListener('click', openCreateWorkspaceModal);
   
-  document.querySelectorAll('.pane-add-tab').forEach(btn => {
-    btn.addEventListener('click', () => openTabModal(btn.dataset.pane));
-  });
+  // Right pane add tab button
+  document.querySelector('.pane-add-tab[data-pane="right"]').addEventListener('click', openTabModal);
   
   document.querySelectorAll('.profile-select').forEach(select => {
-    select.addEventListener('change', (e) => changeProfile(select.dataset.pane, e.target.value));
+    select.addEventListener('change', (e) => changeProfile(e.target.value));
   });
   
   document.querySelectorAll('.profile-manage-btn').forEach(btn => {
@@ -1114,11 +1098,11 @@ function setupEventListeners() {
   document.getElementById('new-profile-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addProfile(); });
   profileModalOverlay.addEventListener('click', (e) => { if (e.target === profileModalOverlay) closeProfileModal(); });
   
-  document.querySelectorAll('.nav-back').forEach(btn => { btn.addEventListener('click', () => navigateBack(btn.dataset.pane)); });
-  document.querySelectorAll('.nav-forward').forEach(btn => { btn.addEventListener('click', () => navigateForward(btn.dataset.pane)); });
-  document.querySelectorAll('.nav-refresh').forEach(btn => { btn.addEventListener('click', () => refreshActiveTab(btn.dataset.pane)); });
-  document.querySelectorAll('.nav-url').forEach(input => {
-    input.addEventListener('keypress', (e) => { if (e.key === 'Enter') { navigateToUrl(input.dataset.pane, input.value.trim()); input.blur(); } });
+  document.querySelector('.nav-back[data-pane="right"]').addEventListener('click', navigateBack);
+  document.querySelector('.nav-forward[data-pane="right"]').addEventListener('click', navigateForward);
+  document.querySelector('.nav-refresh[data-pane="right"]').addEventListener('click', refreshActiveTab);
+  document.querySelector('.nav-url[data-pane="right"]').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') { navigateToUrl(e.target.value.trim()); e.target.blur(); }
   });
   
   document.getElementById('bottom-panel-toggle').addEventListener('click', toggleBottomPanel);
@@ -1149,7 +1133,7 @@ function setupEventListeners() {
   tabUrlInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') confirmTabModal(); });
   
   document.querySelectorAll('.quick-link').forEach(btn => {
-    btn.addEventListener('click', () => { createTab(activePane, btn.dataset.url); closeTabModal(); });
+    btn.addEventListener('click', () => { createTab(btn.dataset.url); closeTabModal(); });
   });
   
   notepadContent.addEventListener('input', saveNotes);
@@ -1170,13 +1154,11 @@ function setupEventListeners() {
   });
   
   document.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 't') { e.preventDefault(); openTabModal(activePane); }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'w') { e.preventDefault(); const pd = getCurrentPaneData(activePane); if (pd?.activeTabId) closeTab(activePane, pd.activeTabId); }
+    if ((e.metaKey || e.ctrlKey) && e.key === 't') { e.preventDefault(); openTabModal(); }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'w') { e.preventDefault(); const pd = getCurrentPaneData(); if (pd?.activeTabId) closeTab(pd.activeTabId); }
     if ((e.metaKey || e.ctrlKey) && e.key === 'n') { e.preventDefault(); openCreateWorkspaceModal(); }
-    if ((e.metaKey || e.ctrlKey) && e.key === '1') { e.preventDefault(); activePane = 'left'; }
-    if ((e.metaKey || e.ctrlKey) && e.key === '2') { e.preventDefault(); activePane = 'right'; }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'r') { e.preventDefault(); refreshActiveTab(activePane); }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'l') { e.preventDefault(); const nav = document.querySelector(`.nav-url[data-pane="${activePane}"]`); nav?.focus(); nav?.select(); }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'r') { e.preventDefault(); refreshActiveTab(); }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'l') { e.preventDefault(); const nav = document.querySelector('.nav-url[data-pane="right"]'); nav?.focus(); nav?.select(); }
     if ((e.metaKey || e.ctrlKey) && e.key === '`') { e.preventDefault(); toggleBottomPanel(); }
     if (e.key === 'F12') { e.preventDefault(); toggleActiveWebviewDevTools(); }
     if (e.key === 'Escape') { closeWorkspaceModal(); closeTabModal(); closeProfileModal(); closeScreenshotPreview(); }
