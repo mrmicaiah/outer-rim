@@ -126,6 +126,12 @@ body {
   color: var(--text-primary);
 }
 
+.commander-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .commander-header button {
   background: none;
   border: none;
@@ -139,6 +145,33 @@ body {
 .commander-header button:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+/* Git Status Indicator in Header */
+.git-status {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  min-width: 20px;
+  text-align: center;
+}
+
+.git-status:empty { display: none; }
+
+.git-status.clean {
+  color: var(--success);
+  background: rgba(107, 189, 110, 0.15);
+}
+
+.git-status.has-changes {
+  color: var(--warning);
+  background: rgba(229, 168, 85, 0.15);
+}
+
+.git-status.error {
+  color: var(--danger);
+  background: rgba(229, 85, 97, 0.15);
 }
 
 /* Settings Panel */
@@ -308,32 +341,6 @@ body {
   color: var(--text-primary);
 }
 
-/* Git Status Indicator */
-.git-status {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
-.git-status.hidden { display: none; }
-
-.git-status.clean {
-  color: var(--success);
-  background: rgba(107, 189, 110, 0.15);
-}
-
-.git-status.has-changes {
-  color: var(--warning);
-  background: rgba(229, 168, 85, 0.15);
-}
-
-.git-status.error {
-  color: var(--danger);
-  background: rgba(229, 85, 97, 0.15);
-}
-
 #edit-project-btn {
   background: none;
   border: 1px solid var(--border-color);
@@ -349,18 +356,21 @@ body {
   color: var(--accent);
 }
 
-/* Git Actions Row */
-.git-actions {
+/* Git Controls */
+#git-controls {
   padding: 6px 10px;
   border-bottom: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-  gap: 6px;
   background: var(--bg-tertiary);
   flex-shrink: 0;
 }
 
-.git-actions.hidden { display: none; }
+#git-controls.hidden { display: none; }
+
+.git-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 
 #commit-message {
   flex: 1;
@@ -375,6 +385,16 @@ body {
 
 #commit-message:focus { border-color: var(--accent); }
 #commit-message::placeholder { color: var(--text-muted); }
+
+.git-status-text {
+  font-size: 10px;
+  margin-top: 4px;
+  color: var(--text-muted);
+}
+
+.git-status-text.clean { color: var(--success); }
+.git-status-text.has-changes { color: var(--warning); }
+.git-status-text.error { color: var(--danger); }
 
 .btn-small {
   padding: 5px 10px;
@@ -578,40 +598,6 @@ body {
   display: flex;
   justify-content: flex-end;
   gap: 6px;
-}
-
-/* ============================================
-   GIT TOAST NOTIFICATIONS
-   ============================================ */
-
-.git-toast {
-  position: fixed;
-  bottom: 60px;
-  left: 50%;
-  transform: translateX(-50%) translateY(20px);
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  z-index: 2000;
-  opacity: 0;
-  transition: opacity 0.3s, transform 0.3s;
-  pointer-events: none;
-}
-
-.git-toast.show {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
-.git-toast.success {
-  background: var(--success);
-  color: white;
-}
-
-.git-toast.error {
-  background: var(--danger);
-  color: white;
 }
 
 /* ============================================
