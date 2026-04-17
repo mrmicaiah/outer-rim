@@ -3,7 +3,7 @@ const path = require('path');
 const Store = require('./store');
 const fs = require('fs');
 const os = require('os');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const store = new Store();
 
@@ -18,23 +18,61 @@ const PROJECTS_PATH = path.join(os.homedir(), 'Projects');
 // Cloud sync endpoint
 const SYNC_API = 'https://micaiahs-worker.micaiah-tasks.workers.dev/api/outerrim';
 
-// Shell environment for commands - include common paths where git might be
+// Find the actual git binary path (not symlinks that may break in packaged apps)
+function findGitPath() {
+  // Prefer the real binary from Xcode CLT, then homebrew locations
+  const candidates = [
+    '/usr/bin/git',                    // Xcode Command Line Tools (real binary)
+    '/opt/homebrew/bin/git',           // Apple Silicon Homebrew
+    '/usr/local/bin/git',              // Intel Homebrew (often a symlink)
+  ];
+  
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        // Verify it's actually executable
+        const result = spawnSync(candidate, ['--version'], { timeout: 5000 });
+        if (result.status === 0) {
+          console.log(`Found working git at: ${candidate}`);
+          return candidate;
+        }
+      }
+    } catch (e) {
+      // Continue to next candidate
+    }
+  }
+  
+  return 'git'; // Fallback to PATH
+}
+
+// Cache the git path
+let GIT_PATH = null;
+function getGitPath() {
+  if (!GIT_PATH) {
+    GIT_PATH = findGitPath();
+  }
+  return GIT_PATH;
+}
+
+// Shell environment for commands
 const SHELL_ENV = {
   ...process.env,
-  PATH: `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Apple/usr/bin:${process.env.PATH || ''}`
+  PATH: `/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin:${process.env.PATH || ''}`,
+  HOME: os.homedir()
 };
 
-// Helper to run shell commands using spawn with shell: true
-function runCommand(command, options = {}) {
+// Run a git command directly using the git binary
+function runGit(args, options = {}) {
   return new Promise((resolve) => {
+    const gitPath = getGitPath();
     const cwd = options.cwd || os.homedir();
     const timeout = options.timeout || 60000;
     
-    // Use spawn with shell: true - this lets the OS find the shell
-    const child = spawn(command, [], {
+    console.log(`Running: ${gitPath} ${args.join(' ')} in ${cwd}`);
+    
+    const child = spawn(gitPath, args, {
       cwd,
       env: SHELL_ENV,
-      shell: true,  // Key: let Node find the shell automatically
       timeout
     });
     
@@ -45,7 +83,9 @@ function runCommand(command, options = {}) {
     child.stderr.on('data', (data) => { stderr += data.toString(); });
     
     child.on('error', (error) => {
+      console.error(`Git error: ${error.message}`);
       resolve({ 
+        success: false,
         stdout, 
         stderr: stderr || error.message, 
         code: -1,
@@ -54,7 +94,13 @@ function runCommand(command, options = {}) {
     });
     
     child.on('close', (code) => {
-      resolve({ stdout, stderr, code: code || 0 });
+      console.log(`Git exited with code ${code}`);
+      resolve({ 
+        success: code === 0,
+        stdout, 
+        stderr, 
+        code: code || 0 
+      });
     });
     
     // Handle timeout
@@ -66,7 +112,43 @@ function runCommand(command, options = {}) {
   });
 }
 
+// Run a shell command (for terminal)
+function runCommand(command, options = {}) {
+  return new Promise((resolve) => {
+    const cwd = options.cwd || os.homedir();
+    const timeout = options.timeout || 60000;
+    
+    const child = spawn(command, [], {
+      cwd,
+      env: SHELL_ENV,
+      shell: true,
+      timeout
+    });
+    
+    let stdout = '';
+    let stderr = '';
+    
+    child.stdout.on('data', (data) => { stdout += data.toString(); });
+    child.stderr.on('data', (data) => { stderr += data.toString(); });
+    
+    child.on('error', (error) => {
+      resolve({ stdout, stderr: stderr || error.message, code: -1, error: error.message });
+    });
+    
+    child.on('close', (code) => {
+      resolve({ stdout, stderr, code: code || 0 });
+    });
+    
+    if (timeout > 0) {
+      setTimeout(() => { try { child.kill(); } catch (e) {} }, timeout);
+    }
+  });
+}
+
 function createWindow() {
+  // Initialize git path early
+  console.log(`Git path: ${getGitPath()}`);
+  
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -517,7 +599,7 @@ ipcMain.handle('project:deleteFile', async (event, projectPath, filePath) => {
 });
 
 // ============================================
-// GIT OPERATIONS
+// GIT OPERATIONS (using direct git binary)
 // ============================================
 
 // Clone a repository
@@ -539,8 +621,8 @@ ipcMain.handle('git:clone', async (event, repoName, localPath) => {
     cloneUrl = `https://github.com/${repoName}.git`;
   }
   
-  const result = await runCommand(`git clone "${cloneUrl}" "${resolved}"`, { timeout: 120000 });
-  if (result.code === 0) {
+  const result = await runGit(['clone', cloneUrl, resolved], { timeout: 120000 });
+  if (result.success) {
     return { success: true, message: 'Repository cloned successfully' };
   } else {
     return { success: false, error: result.stderr || result.error || 'Clone failed' };
@@ -555,8 +637,8 @@ ipcMain.handle('git:status', async (event, projectPath) => {
     return { success: false, error: 'Not a git repository' };
   }
   
-  const result = await runCommand('git status --porcelain', { cwd });
-  if (result.code === 0) {
+  const result = await runGit(['status', '--porcelain'], { cwd });
+  if (result.success) {
     const changes = result.stdout.trim().split('\n').filter(Boolean).map(line => ({
       status: line.substring(0, 2).trim(),
       file: line.substring(3)
@@ -567,20 +649,32 @@ ipcMain.handle('git:status', async (event, projectPath) => {
   }
 });
 
-// Git push (add all, commit, push)
+// Git push (add all, commit, push) - run as separate commands
 ipcMain.handle('git:push', async (event, projectPath, commitMessage) => {
   const cwd = resolvePath(projectPath);
   const message = commitMessage || `Update from Outer Rim - ${new Date().toLocaleString()}`;
-  const escapedMessage = message.replace(/"/g, '\\"').replace(/`/g, '\\`').replace(/\$/g, '\\$');
   
-  const result = await runCommand(`git add -A && git commit -m "${escapedMessage}" && git push`, { cwd, timeout: 60000 });
+  // Step 1: git add -A
+  let result = await runGit(['add', '-A'], { cwd });
+  if (!result.success) {
+    return { success: false, error: 'git add failed: ' + (result.stderr || result.error) };
+  }
   
-  if (result.code === 0) {
+  // Step 2: git commit
+  result = await runGit(['commit', '-m', message], { cwd });
+  if (!result.success) {
+    if (result.stdout.includes('nothing to commit') || result.stderr.includes('nothing to commit')) {
+      return { success: true, message: 'Nothing to commit' };
+    }
+    return { success: false, error: 'git commit failed: ' + (result.stderr || result.error) };
+  }
+  
+  // Step 3: git push
+  result = await runGit(['push'], { cwd, timeout: 60000 });
+  if (result.success) {
     return { success: true, message: result.stdout || 'Pushed successfully' };
-  } else if (result.stdout.includes('nothing to commit') || result.stderr.includes('nothing to commit')) {
-    return { success: true, message: 'Nothing to commit' };
   } else {
-    return { success: false, error: result.stderr || result.error || 'Push failed' };
+    return { success: false, error: 'git push failed: ' + (result.stderr || result.error) };
   }
 });
 
@@ -588,8 +682,8 @@ ipcMain.handle('git:push', async (event, projectPath, commitMessage) => {
 ipcMain.handle('git:pull', async (event, projectPath) => {
   const cwd = resolvePath(projectPath);
   
-  const result = await runCommand('git pull', { cwd, timeout: 60000 });
-  if (result.code === 0) {
+  const result = await runGit(['pull'], { cwd, timeout: 60000 });
+  if (result.success) {
     return { success: true, message: result.stdout || 'Pulled successfully' };
   } else {
     return { success: false, error: result.stderr || result.error || 'Pull failed' };
