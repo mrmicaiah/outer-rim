@@ -1,15 +1,13 @@
-const { app, BrowserWindow, ipcMain, nativeImage, clipboard, Menu, session, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, nativeImage, clipboard, Menu, session, dialog, globalShortcut } = require('electron');
 const path = require('path');
 const Store = require('./store');
 const fs = require('fs');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
-const { registerAgentHandlers } = require('./agent');
 
 const store = new Store();
 
 let mainWindow;
-let agentLifecycle;
 
 // Screenshot folder path
 const SCREENSHOTS_PATH = path.join(os.homedir(), 'Desktop', 'screen_shot_data');
@@ -20,50 +18,41 @@ const PROJECTS_PATH = path.join(os.homedir(), 'Projects');
 // Cloud sync endpoint
 const SYNC_API = 'https://micaiahs-worker.micaiah-tasks.workers.dev/api/outerrim';
 
-// Find the actual git binary path (not symlinks that may break in packaged apps)
+// Find the actual git binary path
 function findGitPath() {
-  // Prefer the real binary from Xcode CLT, then homebrew locations
   const candidates = [
-    '/usr/bin/git',                    // Xcode Command Line Tools (real binary)
-    '/opt/homebrew/bin/git',           // Apple Silicon Homebrew
-    '/usr/local/bin/git',              // Intel Homebrew (often a symlink)
+    '/usr/bin/git',
+    '/opt/homebrew/bin/git',
+    '/usr/local/bin/git',
   ];
   
   for (const candidate of candidates) {
     try {
       if (fs.existsSync(candidate)) {
-        // Verify it's actually executable
         const result = spawnSync(candidate, ['--version'], { timeout: 5000 });
         if (result.status === 0) {
           console.log(`Found working git at: ${candidate}`);
           return candidate;
         }
       }
-    } catch (e) {
-      // Continue to next candidate
-    }
+    } catch (e) {}
   }
   
-  return 'git'; // Fallback to PATH
+  return 'git';
 }
 
-// Cache the git path
 let GIT_PATH = null;
 function getGitPath() {
-  if (!GIT_PATH) {
-    GIT_PATH = findGitPath();
-  }
+  if (!GIT_PATH) GIT_PATH = findGitPath();
   return GIT_PATH;
 }
 
-// Shell environment for commands
 const SHELL_ENV = {
   ...process.env,
   PATH: `/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin:${process.env.PATH || ''}`,
   HOME: os.homedir()
 };
 
-// Run a git command directly using the git binary
 function runGit(args, options = {}) {
   return new Promise((resolve) => {
     const gitPath = getGitPath();
@@ -72,11 +61,7 @@ function runGit(args, options = {}) {
     
     console.log(`Running: ${gitPath} ${args.join(' ')} in ${cwd}`);
     
-    const child = spawn(gitPath, args, {
-      cwd,
-      env: SHELL_ENV,
-      timeout
-    });
+    const child = spawn(gitPath, args, { cwd, env: SHELL_ENV, timeout });
     
     let stdout = '';
     let stderr = '';
@@ -85,60 +70,11 @@ function runGit(args, options = {}) {
     child.stderr.on('data', (data) => { stderr += data.toString(); });
     
     child.on('error', (error) => {
-      console.error(`Git error: ${error.message}`);
-      resolve({ 
-        success: false,
-        stdout, 
-        stderr: stderr || error.message, 
-        code: -1,
-        error: error.message
-      });
+      resolve({ success: false, stdout, stderr: stderr || error.message, code: -1, error: error.message });
     });
     
     child.on('close', (code) => {
-      console.log(`Git exited with code ${code}`);
-      resolve({ 
-        success: code === 0,
-        stdout, 
-        stderr, 
-        code: code || 0 
-      });
-    });
-    
-    // Handle timeout
-    if (timeout > 0) {
-      setTimeout(() => {
-        try { child.kill(); } catch (e) {}
-      }, timeout);
-    }
-  });
-}
-
-// Run a shell command (for terminal)
-function runCommand(command, options = {}) {
-  return new Promise((resolve) => {
-    const cwd = options.cwd || os.homedir();
-    const timeout = options.timeout || 60000;
-    
-    const child = spawn(command, [], {
-      cwd,
-      env: SHELL_ENV,
-      shell: true,
-      timeout
-    });
-    
-    let stdout = '';
-    let stderr = '';
-    
-    child.stdout.on('data', (data) => { stdout += data.toString(); });
-    child.stderr.on('data', (data) => { stderr += data.toString(); });
-    
-    child.on('error', (error) => {
-      resolve({ stdout, stderr: stderr || error.message, code: -1, error: error.message });
-    });
-    
-    child.on('close', (code) => {
-      resolve({ stdout, stderr, code: code || 0 });
+      resolve({ success: code === 0, stdout, stderr, code: code || 0 });
     });
     
     if (timeout > 0) {
@@ -148,7 +84,6 @@ function runCommand(command, options = {}) {
 }
 
 function createWindow() {
-  // Initialize git path early
   console.log(`Git path: ${getGitPath()}`);
   
   mainWindow = new BrowserWindow({
@@ -169,6 +104,7 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
+  // Open DevTools with --dev flag
   if (process.argv.includes('--dev')) {
     mainWindow.webContents.openDevTools();
   }
@@ -186,9 +122,7 @@ function createWindow() {
 function initializeProfiles() {
   const profiles = store.get('profiles') || [];
   if (profiles.length === 0) {
-    store.set('profiles', [
-      { id: 'default', name: 'Default', createdAt: new Date().toISOString() }
-    ]);
+    store.set('profiles', [{ id: 'default', name: 'Default', createdAt: new Date().toISOString() }]);
   }
 }
 
@@ -200,9 +134,7 @@ async function syncWorkspacesToCloud() {
   try {
     const workspaces = store.get('workspaces') || [];
     const syncData = workspaces.map(w => ({
-      id: w.id,
-      name: w.name,
-      notes: w.notes || '',
+      id: w.id, name: w.name, notes: w.notes || '',
       updatedAt: w.updatedAt || w.createdAt || new Date().toISOString()
     }));
     
@@ -215,9 +147,7 @@ async function syncWorkspacesToCloud() {
     if (response.ok) {
       const result = await response.json();
       console.log(`☁️ Synced ${result.workspaces?.length || 0} workspaces to cloud`);
-      if (result.workspaces) {
-        mergeCloudWorkspaces(result.workspaces);
-      }
+      if (result.workspaces) mergeCloudWorkspaces(result.workspaces);
     }
   } catch (err) {
     console.error('Cloud sync error:', err.message);
@@ -293,6 +223,7 @@ function createAppMenu() {
       submenu: [
         { role: 'reload' },
         { role: 'forceReload' },
+        { type: 'separator' },
         { label: 'Toggle Webview DevTools', accelerator: 'F12', click: () => mainWindow.webContents.send('menu:toggleDevTools') },
         { label: 'Toggle App DevTools', accelerator: 'Alt+CmdOrCtrl+I', click: () => mainWindow.webContents.toggleDevTools() },
         { type: 'separator' },
@@ -340,7 +271,6 @@ function watchScreenshots() {
 
 app.whenReady().then(() => {
   createAppMenu();
-  agentLifecycle = registerAgentHandlers();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -349,8 +279,19 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (screenshotWatcher) screenshotWatcher.close();
-  if (agentLifecycle) agentLifecycle.cleanupAll();
   if (process.platform !== 'darwin') app.quit();
+});
+
+// ============================================
+// DEVTOOLS IPC
+// ============================================
+
+ipcMain.handle('devtools:toggle', () => {
+  mainWindow.webContents.toggleDevTools();
+});
+
+ipcMain.handle('devtools:openWebview', () => {
+  mainWindow.webContents.send('menu:toggleDevTools');
 });
 
 // ============================================
@@ -471,47 +412,22 @@ ipcMain.handle('sync:pull', async () => {
 });
 
 // ============================================
-// CLAUDE COMMANDER IPC HANDLERS
+// PROJECT FOLDER OPERATIONS
 // ============================================
 
-ipcMain.handle('commander:load', () => ({
-  chats: store.get('commander.chats') || {},
-  projects: store.get('commander.projects') || {},
-  activeChatId: store.get('commander.activeChatId') || null,
-  apiKey: store.get('commander.apiKey') || null
-}));
-
-ipcMain.handle('commander:save', (event, data) => {
-  if (data.chats !== undefined) store.set('commander.chats', data.chats);
-  if (data.projects !== undefined) store.set('commander.projects', data.projects);
-  if (data.activeChatId !== undefined) store.set('commander.activeChatId', data.activeChatId);
-  if (data.apiKey !== undefined) store.set('commander.apiKey', data.apiKey);
-  return true;
-});
-
-// ============================================
-// LOCAL PROJECT FILE OPERATIONS
-// ============================================
-
-// Resolve ~ to home directory
 function resolvePath(inputPath) {
   if (!inputPath) return inputPath;
-  if (inputPath.startsWith('~')) {
-    return inputPath.replace('~', os.homedir());
-  }
+  if (inputPath.startsWith('~')) return inputPath.replace('~', os.homedir());
   return inputPath;
 }
 
-// Get default projects folder
 ipcMain.handle('project:getProjectsPath', () => PROJECTS_PATH);
 
-// Check if a local path exists
 ipcMain.handle('project:exists', async (event, localPath) => {
   const resolved = resolvePath(localPath);
   return fs.existsSync(resolved);
 });
 
-// Browse for folder
 ipcMain.handle('project:browse', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openDirectory'],
@@ -520,120 +436,10 @@ ipcMain.handle('project:browse', async () => {
   return result.canceled ? null : result.filePaths[0];
 });
 
-// List files in project directory
-ipcMain.handle('project:listFiles', async (event, projectPath, subPath = '') => {
-  const fullPath = path.join(resolvePath(projectPath), subPath);
-  try {
-    const items = await fs.promises.readdir(fullPath, { withFileTypes: true });
-    const files = [];
-    
-    for (const item of items) {
-      // Skip hidden files and common excludes
-      if (item.name.startsWith('.') || item.name === 'node_modules' || item.name === 'dist') continue;
-      
-      const itemPath = path.join(fullPath, item.name);
-      const relativePath = subPath ? path.join(subPath, item.name) : item.name;
-      
-      if (item.isDirectory()) {
-        files.push({ name: item.name, path: relativePath, isDir: true });
-      } else {
-        const stat = await fs.promises.stat(itemPath);
-        files.push({ name: item.name, path: relativePath, isDir: false, size: stat.size });
-      }
-    }
-    
-    // Sort: directories first, then files
-    files.sort((a, b) => {
-      if (a.isDir && !b.isDir) return -1;
-      if (!a.isDir && b.isDir) return 1;
-      return a.name.localeCompare(b.name);
-    });
-    
-    return { success: true, files };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-});
-
-// Read file content
-ipcMain.handle('project:readFile', async (event, projectPath, filePath) => {
-  const fullPath = path.join(resolvePath(projectPath), filePath);
-  try {
-    const content = await fs.promises.readFile(fullPath, 'utf8');
-    return { success: true, content };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-});
-
-// Write file content
-ipcMain.handle('project:writeFile', async (event, projectPath, filePath, content) => {
-  const fullPath = path.join(resolvePath(projectPath), filePath);
-  try {
-    // Ensure directory exists
-    await fs.promises.mkdir(path.dirname(fullPath), { recursive: true });
-    await fs.promises.writeFile(fullPath, content, 'utf8');
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-});
-
-// Create new file
-ipcMain.handle('project:createFile', async (event, projectPath, filePath, content = '') => {
-  const fullPath = path.join(resolvePath(projectPath), filePath);
-  try {
-    await fs.promises.mkdir(path.dirname(fullPath), { recursive: true });
-    await fs.promises.writeFile(fullPath, content, 'utf8');
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-});
-
-// Delete file
-ipcMain.handle('project:deleteFile', async (event, projectPath, filePath) => {
-  const fullPath = path.join(resolvePath(projectPath), filePath);
-  try {
-    await fs.promises.unlink(fullPath);
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-});
-
 // ============================================
-// GIT OPERATIONS (using direct git binary)
+// GIT OPERATIONS
 // ============================================
 
-// Clone a repository
-ipcMain.handle('git:clone', async (event, repoName, localPath) => {
-  const resolved = resolvePath(localPath);
-  
-  // Check if folder already exists
-  if (fs.existsSync(resolved)) {
-    if (fs.existsSync(path.join(resolved, '.git'))) {
-      return { success: true, message: 'Repository already exists', alreadyExists: true };
-    } else {
-      return { success: false, error: 'Folder exists but is not a git repository' };
-    }
-  }
-  
-  // Build clone URL
-  let cloneUrl = repoName;
-  if (!repoName.includes('://')) {
-    cloneUrl = `https://github.com/${repoName}.git`;
-  }
-  
-  const result = await runGit(['clone', cloneUrl, resolved], { timeout: 120000 });
-  if (result.success) {
-    return { success: true, message: 'Repository cloned successfully' };
-  } else {
-    return { success: false, error: result.stderr || result.error || 'Clone failed' };
-  }
-});
-
-// Get git status
 ipcMain.handle('git:status', async (event, projectPath) => {
   const cwd = resolvePath(projectPath);
   
@@ -653,18 +459,13 @@ ipcMain.handle('git:status', async (event, projectPath) => {
   }
 });
 
-// Git push (add all, commit, push) - run as separate commands
 ipcMain.handle('git:push', async (event, projectPath, commitMessage) => {
   const cwd = resolvePath(projectPath);
   const message = commitMessage || `Update from Outer Rim - ${new Date().toLocaleString()}`;
   
-  // Step 1: git add -A
   let result = await runGit(['add', '-A'], { cwd });
-  if (!result.success) {
-    return { success: false, error: 'git add failed: ' + (result.stderr || result.error) };
-  }
+  if (!result.success) return { success: false, error: 'git add failed: ' + (result.stderr || result.error) };
   
-  // Step 2: git commit
   result = await runGit(['commit', '-m', message], { cwd });
   if (!result.success) {
     if (result.stdout.includes('nothing to commit') || result.stderr.includes('nothing to commit')) {
@@ -673,7 +474,6 @@ ipcMain.handle('git:push', async (event, projectPath, commitMessage) => {
     return { success: false, error: 'git commit failed: ' + (result.stderr || result.error) };
   }
   
-  // Step 3: git push
   result = await runGit(['push'], { cwd, timeout: 60000 });
   if (result.success) {
     return { success: true, message: result.stdout || 'Pushed successfully' };
@@ -682,7 +482,6 @@ ipcMain.handle('git:push', async (event, projectPath, commitMessage) => {
   }
 });
 
-// Git pull
 ipcMain.handle('git:pull', async (event, projectPath) => {
   const cwd = resolvePath(projectPath);
   
@@ -737,36 +536,6 @@ ipcMain.handle('screenshots:deleteAll', async () => {
 });
 
 ipcMain.handle('screenshots:getPath', () => SCREENSHOTS_PATH);
-
-// ============================================
-// FILES IPC HANDLERS (generic)
-// ============================================
-
-ipcMain.handle('files:list', async (event, inputPath) => {
-  const resolvedPath = resolvePath(inputPath);
-  try {
-    const items = await fs.promises.readdir(resolvedPath, { withFileTypes: true });
-    const files = await Promise.all(items.map(async (item) => {
-      let size = null;
-      if (!item.isDirectory()) {
-        try { size = (await fs.promises.stat(path.join(resolvedPath, item.name))).size; } catch {}
-      }
-      return { name: item.name, isDirectory: item.isDirectory(), size };
-    }));
-    return files.filter(f => !f.name.startsWith('.'));
-  } catch (err) {
-    throw new Error(`Cannot read directory: ${err.message}`);
-  }
-});
-
-// ============================================
-// TERMINAL IPC HANDLERS
-// ============================================
-
-ipcMain.handle('terminal:run', async (event, command) => {
-  const result = await runCommand(command, { cwd: os.homedir(), timeout: 30000 });
-  return { stdout: result.stdout, stderr: result.stderr, code: result.code };
-});
 
 // ============================================
 // SCRATCHPAD IPC HANDLERS

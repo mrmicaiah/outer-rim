@@ -20,77 +20,58 @@
         <!-- Dual Pane Container -->
         <div id="dual-pane-container">
           
-          <!-- Left Pane: Claude Commander -->
-          <div id="left-pane" class="commander-pane">
-            <!-- Commander Header -->
-            <div class="commander-header">
-              <span class="commander-title">🤖 Claude</span>
-              <div class="commander-header-actions">
-                <span id="git-status-indicator" class="git-status" title="Git status"></span>
-                <button id="commander-settings-btn" title="Settings">⚙</button>
-              </div>
+          <!-- Left Pane: Workspace Info + Git -->
+          <div id="left-pane" class="sidebar-pane">
+            <!-- Workspace Header -->
+            <div class="sidebar-header">
+              <span class="sidebar-title">📁 Workspace</span>
+              <button id="devtools-btn" title="Open DevTools (F12)">🔧</button>
             </div>
             
-            <!-- Settings Panel (hidden by default) -->
-            <div id="commander-settings" class="hidden">
-              <div class="settings-row">
-                <label>API Key:</label>
-                <div class="api-key-input-row">
-                  <input type="password" id="api-key-input" placeholder="sk-ant-...">
-                  <button id="api-key-toggle" title="Show/Hide">👁</button>
-                </div>
-              </div>
-              <div class="settings-row">
-                <span id="api-key-status" class="api-key-status"></span>
-              </div>
+            <!-- Current Workspace Info -->
+            <div id="workspace-info">
+              <div class="workspace-name-display">No workspace</div>
+              <div class="workspace-folder-display"></div>
             </div>
             
-            <!-- Chat Tabs -->
-            <div class="commander-chat-bar">
-              <div id="chat-tabs"></div>
-              <button id="new-chat-btn" title="New Chat">+</button>
-            </div>
-            
-            <!-- Project Selector -->
-            <div class="commander-project-row">
-              <select id="project-select">
-                <option value="">No Project</option>
-              </select>
-              <button id="edit-project-btn" title="Edit Project">⚙</button>
-            </div>
-            
-            <!-- Git Controls (shown when project has localPath) -->
+            <!-- Git Controls -->
             <div id="git-controls" class="hidden">
+              <div class="git-header">
+                <span>Git</span>
+                <span id="git-status-indicator" class="git-status" title="Git status"></span>
+              </div>
               <div class="git-controls-row">
-                <input type="text" id="commit-message" placeholder="Commit message...">
-                <button id="git-pull-btn" class="btn-small" title="Pull">Pull</button>
-                <button id="git-push-btn" class="btn-small btn-primary" title="Push">Push</button>
+                <input type="text" id="commit-message" placeholder="Commit message (auto-generated if empty)">
+              </div>
+              <div class="git-buttons-row">
+                <button id="git-pull-btn" class="btn-small" title="Pull">⬇ Pull</button>
+                <button id="git-push-btn" class="btn-small btn-primary" title="Push">⬆ Push</button>
               </div>
               <div id="git-status-text" class="git-status-text"></div>
             </div>
             
-            <!-- Chat Label + Task -->
-            <div class="commander-task-area">
-              <div class="task-label-row">
-                <label>Label:</label>
-                <input type="text" id="chat-label-input" placeholder="e.g. focus-bug" maxlength="20">
-              </div>
-              <div class="task-desc-row">
-                <label>Task:</label>
-                <textarea id="task-input" placeholder="Describe what you're working on..."></textarea>
+            <!-- Folder Selector -->
+            <div class="folder-section">
+              <label>Project Folder:</label>
+              <div class="path-input-row">
+                <input type="text" id="folder-path-input" placeholder="~/Projects/my-app">
+                <button id="folder-browse-btn" class="btn-small">Browse</button>
               </div>
             </div>
             
-            <!-- Messages Area -->
-            <div id="commander-messages"></div>
+            <!-- Spacer -->
+            <div class="sidebar-spacer"></div>
             
-            <!-- Input Area -->
-            <div class="commander-input-area">
-              <textarea id="commander-input" placeholder="Message Claude... (Cmd+Enter)"></textarea>
-              <div class="commander-actions">
-                <button id="clear-chat-btn" class="btn-secondary" title="Summarize & Clear">Clear</button>
-                <button id="send-btn" class="btn-primary">Send</button>
+            <!-- Screenshots Section -->
+            <div id="screenshots-section">
+              <div class="section-header">
+                <span>📸 Screenshots</span>
+                <div class="section-actions">
+                  <button id="screenshots-refresh" title="Refresh">↻</button>
+                  <button id="screenshots-delete-all" class="danger-btn" title="Delete All">🗑️</button>
+                </div>
               </div>
+              <div id="screenshots-list"></div>
             </div>
           </div>
 
@@ -136,56 +117,6 @@
 
           <!-- Notepad Expand Button (when collapsed) -->
           <button id="notepad-expand" class="hidden" title="Expand Notes">📝</button>
-        </div>
-
-        <!-- Bottom Panel Resizer -->
-        <div id="bottom-panel-resizer"></div>
-
-        <!-- Bottom Tool Panel -->
-        <div id="bottom-panel">
-          <div class="bottom-panel-header">
-            <span class="bottom-panel-title">Tools</span>
-            <button id="bottom-panel-toggle" title="Toggle Panel">▼</button>
-          </div>
-          <div class="bottom-panel-content">
-            <!-- Screenshots Section -->
-            <div id="screenshots-section" class="bottom-section">
-              <div class="bottom-section-header">
-                <span>📸 Screenshots</span>
-                <div class="bottom-section-actions">
-                  <button id="screenshots-refresh" title="Refresh">↻</button>
-                  <button id="screenshots-delete-all" class="danger-btn" title="Delete All">🗑️</button>
-                </div>
-              </div>
-              <div id="screenshots-list"></div>
-            </div>
-
-            <!-- Resizer -->
-            <div class="bottom-section-resizer" data-resize="screenshots-terminal"></div>
-
-            <!-- Terminal Section -->
-            <div id="terminal-section" class="bottom-section">
-              <div class="bottom-section-header">
-                <span>💻 Terminal</span>
-              </div>
-              <div id="terminal-output"></div>
-              <div class="terminal-input-row">
-                <span class="terminal-prompt">$</span>
-                <input type="text" id="terminal-input" placeholder="Enter command...">
-              </div>
-            </div>
-
-            <!-- Resizer -->
-            <div class="bottom-section-resizer" data-resize="terminal-scratchpad"></div>
-
-            <!-- Scratchpad Section -->
-            <div id="scratchpad-section" class="bottom-section">
-              <div class="bottom-section-header">
-                <span>📝 Scratchpad</span>
-              </div>
-              <textarea id="scratchpad-content" placeholder="Quick notes..."></textarea>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -249,36 +180,6 @@
       </div>
     </div>
 
-    <!-- Project Edit Modal -->
-    <div id="project-modal-overlay" class="hidden">
-      <div id="project-modal">
-        <h3 id="project-modal-title">Edit Project</h3>
-        <label>Project Name:</label>
-        <input type="text" id="project-name-input" placeholder="e.g., Outer Rim">
-        
-        <label>Local Path:</label>
-        <div class="path-input-row">
-          <input type="text" id="project-path-input" placeholder="~/Projects/outer-rim">
-          <button id="project-browse-btn" class="btn-small">Browse</button>
-        </div>
-        
-        <label>GitHub Repo (optional):</label>
-        <input type="text" id="project-repo-input" placeholder="e.g., mrmicaiah/outer-rim">
-        
-        <label>Tech Stack:</label>
-        <input type="text" id="project-stack-input" placeholder="e.g., Electron 29, vanilla JS">
-        
-        <label>Key Files (one per line):</label>
-        <textarea id="project-files-input" placeholder="app.js - UI logic\nmain.js - IPC handlers"></textarea>
-        
-        <div class="modal-actions">
-          <button id="project-modal-delete" class="btn-danger">Delete</button>
-          <button id="project-modal-cancel" class="btn-secondary">Cancel</button>
-          <button id="project-modal-save" class="btn-primary">Save</button>
-        </div>
-      </div>
-    </div>
-
     <!-- Screenshot Preview Modal -->
     <div id="screenshot-preview-overlay" class="hidden">
       <div id="screenshot-preview">
@@ -293,6 +194,5 @@
   </div>
 
   <script src="app.js"></script>
-  <script src="commander.js"></script>
 </body>
 </html>
