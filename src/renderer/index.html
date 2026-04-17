@@ -146,6 +146,49 @@
       </div>
     </div>
 
+    <!-- Claude Commander Panel (Slide-out from right) -->
+    <div id="commander-panel" class="collapsed">
+      <div id="commander-toggle" title="Toggle Claude Commander (Cmd+Shift+C)">🤖</div>
+      <div id="commander-content">
+        <div id="commander-header">
+          <span class="commander-title">🤖 Claude Commander</span>
+          <button id="commander-close" title="Close">✕</button>
+        </div>
+        
+        <!-- Chat List -->
+        <div id="commander-chat-list">
+          <div id="chat-tabs"></div>
+          <button id="new-chat-btn" title="New Chat">+ New</button>
+        </div>
+        
+        <!-- Project Selector -->
+        <div id="commander-project">
+          <select id="project-select">
+            <option value="">Select Project...</option>
+          </select>
+          <button id="edit-project-btn" title="Edit Project">⚙</button>
+        </div>
+        
+        <!-- Task Description -->
+        <div id="commander-task">
+          <label for="task-input">📋 Current Task:</label>
+          <textarea id="task-input" placeholder="Describe what you're working on..."></textarea>
+        </div>
+        
+        <!-- Chat Messages -->
+        <div id="commander-messages"></div>
+        
+        <!-- Input Area -->
+        <div id="commander-input-area">
+          <textarea id="commander-input" placeholder="Message Claude..."></textarea>
+          <div id="commander-actions">
+            <button id="clear-chat-btn" class="btn-secondary" title="Summarize & Clear">Clear</button>
+            <button id="send-btn" class="btn-primary">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Empty State Overlay -->
     <div id="empty-state-overlay" class="hidden">
       <div class="empty-icon">🚀</div>
@@ -199,6 +242,26 @@
       </div>
     </div>
 
+    <!-- Project Edit Modal -->
+    <div id="project-modal-overlay" class="hidden">
+      <div id="project-modal">
+        <h3 id="project-modal-title">Edit Project</h3>
+        <label>Project Name:</label>
+        <input type="text" id="project-name-input" placeholder="e.g., Outer Rim">
+        <label>GitHub Repo:</label>
+        <input type="text" id="project-repo-input" placeholder="e.g., mrmicaiah/outer-rim">
+        <label>Tech Stack:</label>
+        <input type="text" id="project-stack-input" placeholder="e.g., Electron 29, vanilla JS">
+        <label>Key Files (one per line):</label>
+        <textarea id="project-files-input" placeholder="app.js - UI logic\nmain.js - IPC handlers"></textarea>
+        <div class="modal-actions">
+          <button id="project-modal-delete" class="btn-danger">Delete</button>
+          <button id="project-modal-cancel" class="btn-secondary">Cancel</button>
+          <button id="project-modal-save" class="btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Screenshot Preview Modal -->
     <div id="screenshot-preview-overlay" class="hidden">
       <div id="screenshot-preview">
@@ -213,5 +276,6 @@
   </div>
 
   <script src="app.js"></script>
+  <script src="commander.js"></script>
 </body>
 </html>
