@@ -285,6 +285,7 @@ body {
   padding: 6px 10px;
   border-bottom: 1px solid var(--border-color);
   display: flex;
+  align-items: center;
   gap: 6px;
   flex-shrink: 0;
 }
@@ -307,6 +308,32 @@ body {
   color: var(--text-primary);
 }
 
+/* Git Status Indicator */
+.git-status {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.git-status.hidden { display: none; }
+
+.git-status.clean {
+  color: var(--success);
+  background: rgba(107, 189, 110, 0.15);
+}
+
+.git-status.has-changes {
+  color: var(--warning);
+  background: rgba(229, 168, 85, 0.15);
+}
+
+.git-status.error {
+  color: var(--danger);
+  background: rgba(229, 85, 97, 0.15);
+}
+
 #edit-project-btn {
   background: none;
   border: 1px solid var(--border-color);
@@ -320,6 +347,65 @@ body {
 #edit-project-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* Git Actions Row */
+.git-actions {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-tertiary);
+  flex-shrink: 0;
+}
+
+.git-actions.hidden { display: none; }
+
+#commit-message {
+  flex: 1;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 11px;
+  padding: 5px 8px;
+  outline: none;
+}
+
+#commit-message:focus { border-color: var(--accent); }
+#commit-message::placeholder { color: var(--text-muted); }
+
+.btn-small {
+  padding: 5px 10px;
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.btn-small:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.btn-small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-small.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.btn-small.btn-primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 /* Task Area */
@@ -492,6 +578,40 @@ body {
   display: flex;
   justify-content: flex-end;
   gap: 6px;
+}
+
+/* ============================================
+   GIT TOAST NOTIFICATIONS
+   ============================================ */
+
+.git-toast {
+  position: fixed;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 2000;
+  opacity: 0;
+  transition: opacity 0.3s, transform 0.3s;
+  pointer-events: none;
+}
+
+.git-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.git-toast.success {
+  background: var(--success);
+  color: white;
+}
+
+.git-toast.error {
+  background: var(--danger);
+  color: white;
 }
 
 /* ============================================
@@ -1302,6 +1422,24 @@ body {
 #project-modal input:focus,
 #project-modal textarea:focus {
   border-color: var(--accent);
+}
+
+/* Path input row with browse button */
+.path-input-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.path-input-row input {
+  flex: 1;
+  margin-bottom: 0;
+  font-family: 'SF Mono', monospace;
+  font-size: 12px;
+}
+
+.path-input-row button {
+  flex-shrink: 0;
 }
 
 .quick-links {
