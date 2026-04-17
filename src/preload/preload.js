@@ -59,6 +59,45 @@ contextBridge.exposeInMainWorld('outerRim', {
     push: (projectPath, message) => ipcRenderer.invoke('git:push', projectPath, message),
     pull: (projectPath) => ipcRenderer.invoke('git:pull', projectPath),
   },
+  // Claude Agent SDK (runs in main process)
+  agent: {
+    /**
+     * Start a Commander turn.
+     * @param {object} args
+     * @param {string} args.chatId       - identifies which chat this turn belongs to
+     * @param {string} args.prompt       - user message
+     * @param {string|null} args.sessionId - pass to continue a prior session
+     * @param {string} args.projectPath  - absolute path to the active project
+     * @param {string} args.apiKey       - Anthropic API key
+     * @param {string} [args.task]       - optional task description for system prompt
+     * @returns {Promise<{ ok: boolean, error?: string }>}
+     */
+    start: (args) => ipcRenderer.invoke('agent:start', args),
+
+    /** Cancel the running turn for a specific chat. */
+    cancel: (chatId) => ipcRenderer.invoke('agent:cancel', { chatId }),
+
+    /** Subscribe to every SDKMessage. Returns an unsubscribe fn. */
+    onMessage: (callback) => {
+      const handler = (_e, payload) => callback(payload);
+      ipcRenderer.on('agent:message', handler);
+      return () => ipcRenderer.removeListener('agent:message', handler);
+    },
+
+    /** Fires once per turn with the final result summary. */
+    onDone: (callback) => {
+      const handler = (_e, payload) => callback(payload);
+      ipcRenderer.on('agent:done', handler);
+      return () => ipcRenderer.removeListener('agent:done', handler);
+    },
+
+    /** Fires if the agent loop throws. */
+    onError: (callback) => {
+      const handler = (_e, payload) => callback(payload);
+      ipcRenderer.on('agent:error', handler);
+      return () => ipcRenderer.removeListener('agent:error', handler);
+    },
+  },
   // Menu events
   onMenuToggleDevTools: (callback) => ipcRenderer.on('menu:toggleDevTools', callback),
 });
