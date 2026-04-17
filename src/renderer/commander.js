@@ -4,7 +4,7 @@
 // ============================================
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-sonnet-4-20250514';
+const MODEL = 'claude-opus-4-20250514';
 
 let chats = {};
 let projects = {};
@@ -84,14 +84,14 @@ async function executeTool(toolName, toolInput) {
         const subPath = toolInput.path || '';
         const result = await window.outerRim.project.listFiles(projectPath, subPath);
         if (result.success) {
-          const formatted = result.files.map(f => 
-            `${f.isDir ? '📁' : '📄'} ${f.name}${f.isDir ? '/' : ''} ${f.size ? `(${formatSize(f.size)})` : ''}`
-          ).join('\n');
+          // Return compact format to reduce token usage
+          const fileList = result.files.map(f => 
+            f.isDir ? `${f.name}/` : f.name
+          ).join(', ');
           return { 
             success: true, 
             path: subPath || '.',
-            files: result.files,
-            formatted: formatted || '(empty directory)'
+            files: fileList
           };
         } else {
           return { error: result.error };
@@ -101,11 +101,15 @@ async function executeTool(toolName, toolInput) {
       case "read_file": {
         const result = await window.outerRim.project.readFile(projectPath, toolInput.path);
         if (result.success) {
+          // Truncate very large files to avoid token limits
+          let content = result.content;
+          if (content.length > 50000) {
+            content = content.slice(0, 50000) + '\n\n... [truncated - file too large]';
+          }
           return { 
             success: true, 
             path: toolInput.path,
-            content: result.content,
-            size: result.content.length
+            content: content
           };
         } else {
           return { error: result.error };
@@ -118,7 +122,7 @@ async function executeTool(toolName, toolInput) {
           return { 
             success: true, 
             path: toolInput.path,
-            message: `Successfully wrote ${toolInput.content.length} characters to ${toolInput.path}`
+            message: `Wrote ${toolInput.content.length} chars to ${toolInput.path}`
           };
         } else {
           return { error: result.error };
@@ -367,7 +371,7 @@ async function generateCommitMessage(projectPath) {
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: MODEL,
+        model: 'claude-sonnet-4-20250514', // Use Sonnet for quick commit messages
         max_tokens: 100,
         messages: [{
           role: 'user',
@@ -564,7 +568,6 @@ function renderMessages() {
     div.className = `commander-message ${msg.role}`;
     
     if (msg.role === 'assistant' && msg.toolCalls) {
-      // Show tool calls
       let html = '';
       msg.toolCalls.forEach(tc => {
         html += `<div class="tool-call"><span class="tool-name">🔧 ${tc.name}</span>`;
@@ -623,40 +626,32 @@ function buildSystemPrompt() {
   const chat = chats[activeChatId];
   if (!chat) return '';
   
-  let prompt = `You are Claude, an AI coding assistant integrated into Outer Rim, a workspace browser app.
+  let prompt = `You are Claude Opus, an elite AI coding assistant in Outer Rim.
 
-You have access to tools that let you read and write files in the user's local project. Use them to actually look at the code rather than guessing.
+You have tools to read/write files in the user's local project. USE THEM - don't guess about code.
 
-IMPORTANT GUIDELINES:
-- When asked about the project, USE list_files and read_file to actually look at the code
-- When asked to make changes, USE write_file to write the changes directly
-- Be concise and direct - the user can see the files you're reading
-- After writing files, briefly confirm what you changed
+GUIDELINES:
+- Use list_files and read_file to explore before answering
+- Use write_file to make changes directly
+- Be concise - the user sees what files you access
+- Confirm what you changed after writing
 
 `;
   
   const project = projects[chat.projectId];
   if (project) {
-    prompt += `## Current Project: ${project.name}\n`;
-    if (project.localPath) prompt += `Local Path: ${project.localPath}\n`;
-    if (project.repo) prompt += `GitHub Repo: ${project.repo}\n`;
-    if (project.stack) prompt += `Tech Stack: ${project.stack}\n`;
-    if (project.keyFiles) prompt += `Key Files:\n${project.keyFiles}\n`;
+    prompt += `## Project: ${project.name}\n`;
+    if (project.localPath) prompt += `Path: ${project.localPath}\n`;
+    if (project.repo) prompt += `Repo: ${project.repo}\n`;
+    if (project.stack) prompt += `Stack: ${project.stack}\n`;
+    if (project.keyFiles) prompt += `Key files: ${project.keyFiles}\n`;
     prompt += '\n';
   } else {
-    prompt += '## No project selected\nAsk the user to select a project first.\n\n';
-  }
-  
-  if (chat.changelog.length > 0) {
-    prompt += '## Recent Work in This Chat\n';
-    chat.changelog.slice(0, 5).forEach(entry => {
-      prompt += `- [${new Date(entry.ts).toLocaleDateString()}] ${entry.summary}\n`;
-    });
-    prompt += '\n';
+    prompt += '## No project selected - ask user to select one first.\n\n';
   }
   
   if (chat.task) {
-    prompt += `## Current Task\n${chat.task}\n\n`;
+    prompt += `## Task: ${chat.task}\n\n`;
   }
   
   return prompt;
@@ -676,7 +671,6 @@ async function sendMessage() {
   const chat = chats[activeChatId];
   if (!chat) return;
   
-  // Add user message
   chat.messages.push({ role: 'user', content: message });
   chat.updatedAt = Date.now();
   input.value = '';
@@ -684,7 +678,6 @@ async function sendMessage() {
   renderMessages();
   scheduleSave();
   
-  // Show loading
   const container = document.getElementById('commander-messages');
   const loadingDiv = document.createElement('div');
   loadingDiv.className = 'commander-message assistant loading';
@@ -693,7 +686,7 @@ async function sendMessage() {
   container.scrollTop = container.scrollHeight;
   
   try {
-    // Build initial messages - only use simple string content for history
+    // Build messages - only string content for clean history
     let apiMessages = chat.messages
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .filter(m => typeof m.content === 'string' && m.content.trim())
@@ -709,7 +702,7 @@ async function sendMessage() {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 8096,
+        max_tokens: 4096,
         system: buildSystemPrompt(),
         tools: TOOLS,
         messages: apiMessages
@@ -723,17 +716,20 @@ async function sendMessage() {
     }
     let data = await response.json();
     
-    // Handle tool use loop - maintain separate conversation for API
+    // Tool use loop
     let conversationMessages = [...apiMessages];
+    let loopCount = 0;
+    const maxLoops = 10; // Prevent infinite loops
     
-    while (data.stop_reason === 'tool_use') {
-      loadingDiv.innerHTML = '<div class="message-content">Using tools...</div>';
+    while (data.stop_reason === 'tool_use' && loopCount < maxLoops) {
+      loopCount++;
+      loadingDiv.innerHTML = `<div class="message-content">Using tools (${loopCount})...</div>`;
       
       const toolUseBlocks = data.content.filter(b => b.type === 'tool_use');
       const textBlocks = data.content.filter(b => b.type === 'text');
       const textContent = textBlocks.map(b => b.text).join('\n');
       
-      // Store for UI display
+      // Store for UI
       const assistantMsg = {
         role: 'assistant',
         content: textContent,
@@ -742,12 +738,12 @@ async function sendMessage() {
       chat.messages.push(assistantMsg);
       renderMessages();
       
-      // Execute tools and collect results
+      // Execute tools
       const toolResults = [];
       for (const toolUse of toolUseBlocks) {
-        console.log(`Executing tool: ${toolUse.name}`, toolUse.input);
+        console.log(`Tool: ${toolUse.name}`, toolUse.input);
         const result = await executeTool(toolUse.name, toolUse.input);
-        console.log(`Tool result:`, result);
+        console.log(`Result:`, result);
         toolResults.push({
           type: 'tool_result',
           tool_use_id: toolUse.id,
@@ -755,11 +751,9 @@ async function sendMessage() {
         });
       }
       
-      // Add assistant response and tool results to conversation
+      // Continue conversation
       conversationMessages.push({ role: 'assistant', content: data.content });
       conversationMessages.push({ role: 'user', content: toolResults });
-      
-      console.log('Sending continuation with messages:', JSON.stringify(conversationMessages, null, 2));
       
       response = await fetch(ANTHROPIC_API, {
         method: 'POST',
@@ -771,7 +765,7 @@ async function sendMessage() {
         },
         body: JSON.stringify({
           model: MODEL,
-          max_tokens: 8096,
+          max_tokens: 4096,
           system: buildSystemPrompt(),
           tools: TOOLS,
           messages: conversationMessages
@@ -802,8 +796,6 @@ async function sendMessage() {
   
   loadingDiv.remove();
   renderMessages();
-  
-  // Refresh git status in case files were written
   setTimeout(checkGitStatus, 500);
 }
 
@@ -833,7 +825,7 @@ async function clearChat() {
             'anthropic-dangerous-direct-browser-access': 'true'
           },
           body: JSON.stringify({
-            model: MODEL,
+            model: 'claude-sonnet-4-20250514', // Use Sonnet for summaries
             max_tokens: 200,
             messages: [
               ...textMessages,
@@ -902,7 +894,7 @@ function setupCommanderListeners() {
   commanderInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       if (e.shiftKey) {
-        return; // Allow newline
+        return;
       } else {
         e.preventDefault();
         sendMessage();
@@ -928,9 +920,7 @@ function setupCommanderListeners() {
   
   document.getElementById('project-browse-btn').addEventListener('click', async () => {
     try {
-      console.log('Browse button clicked');
       const selectedPath = await window.outerRim.project.browse();
-      console.log('Selected path:', selectedPath);
       if (selectedPath) {
         document.getElementById('project-path-input').value = selectedPath;
       }
