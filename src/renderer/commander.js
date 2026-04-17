@@ -605,6 +605,19 @@ function escapeHtml(text) {
 }
 
 // ============================================
+// AUTO-EXPAND TEXTAREA
+// ============================================
+
+function autoExpandTextarea(textarea) {
+  // Reset height to auto to get the correct scrollHeight
+  textarea.style.height = 'auto';
+  // Set height to scrollHeight, but respect max-height from CSS
+  const maxHeight = 200; // matches CSS max-height
+  const newHeight = Math.min(textarea.scrollHeight, maxHeight);
+  textarea.style.height = newHeight + 'px';
+}
+
+// ============================================
 // API INTERACTION WITH TOOLS
 // ============================================
 
@@ -669,6 +682,8 @@ async function sendMessage() {
   chat.messages.push({ role: 'user', content: message });
   chat.updatedAt = Date.now();
   input.value = '';
+  // Reset textarea height after clearing
+  input.style.height = 'auto';
   renderMessages();
   scheduleSave();
   
@@ -881,9 +896,28 @@ function setupCommanderListeners() {
   });
   
   document.getElementById('send-btn').addEventListener('click', sendMessage);
-  document.getElementById('commander-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendMessage(); }
+  
+  // Commander input: Enter sends, Shift+Enter adds newline, auto-expand
+  const commanderInput = document.getElementById('commander-input');
+  
+  commanderInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      if (e.shiftKey) {
+        // Shift+Enter: allow default behavior (newline)
+        return;
+      } else {
+        // Enter alone: send message
+        e.preventDefault();
+        sendMessage();
+      }
+    }
   });
+  
+  // Auto-expand on input
+  commanderInput.addEventListener('input', () => {
+    autoExpandTextarea(commanderInput);
+  });
+  
   document.getElementById('clear-chat-btn').addEventListener('click', clearChat);
   
   // Git controls
