@@ -1,10 +1,8 @@
 // ============================================
 // CLAUDE COMMANDER - Left Pane Chat Interface
-// With local file tools for reading/writing project files
+// Agent SDK edition — the SDK runs in the main process; this file
+// only sends prompts and renders streamed SDKMessages.
 // ============================================
-
-const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-opus-4-20250514';
 
 let chats = {};
 let projects = {};
@@ -13,134 +11,17 @@ let apiKey = null;
 let saveTimeout = null;
 let gitStatusInterval = null;
 
-// ============================================
-// TOOL DEFINITIONS
-// ============================================
+// Per-chat runtime state for an in-flight turn:
+//   running: boolean — is a turn currently executing for this chat
+//   loadingEl: HTMLElement | null — the "Thinking…" placeholder we swap out
+//   toolCards: Map<tool_use_id, HTMLElement> — for matching tool_result → tool_use
+const chatRuntime = new Map();
 
-const TOOLS = [
-  {
-    name: "list_files",
-    description: "List files and directories in the project. Returns names, types (file/directory), and sizes. Use this to explore the project structure.",
-    input_schema: {
-      type: "object",
-      properties: {
-        path: {
-          type: "string",
-          description: "Relative path within the project. Use '' or '.' for root, or 'src/components' for subdirectories."
-        }
-      },
-      required: []
-    }
-  },
-  {
-    name: "read_file",
-    description: "Read the contents of a file in the project. Returns the full file content as text.",
-    input_schema: {
-      type: "object",
-      properties: {
-        path: {
-          type: "string",
-          description: "Relative path to the file, e.g. 'src/app.js' or 'package.json'"
-        }
-      },
-      required: ["path"]
-    }
-  },
-  {
-    name: "write_file",
-    description: "Write content to a file in the project. Creates the file if it doesn't exist, overwrites if it does. Creates parent directories as needed.",
-    input_schema: {
-      type: "object",
-      properties: {
-        path: {
-          type: "string",
-          description: "Relative path to the file, e.g. 'src/newComponent.js'"
-        },
-        content: {
-          type: "string",
-          description: "The full content to write to the file"
-        }
-      },
-      required: ["path", "content"]
-    }
+function getRuntime(chatId) {
+  if (!chatRuntime.has(chatId)) {
+    chatRuntime.set(chatId, { running: false, loadingEl: null, toolCards: new Map() });
   }
-];
-
-// ============================================
-// TOOL EXECUTION
-// ============================================
-
-async function executeTool(toolName, toolInput) {
-  const project = getActiveProject();
-  if (!project?.localPath) {
-    return { error: "No project selected or project has no local path configured." };
-  }
-  
-  const projectPath = project.localPath;
-  
-  try {
-    switch (toolName) {
-      case "list_files": {
-        const subPath = toolInput.path || '';
-        const result = await window.outerRim.project.listFiles(projectPath, subPath);
-        if (result.success) {
-          // Return compact format to reduce token usage
-          const fileList = result.files.map(f => 
-            f.isDir ? `${f.name}/` : f.name
-          ).join(', ');
-          return { 
-            success: true, 
-            path: subPath || '.',
-            files: fileList
-          };
-        } else {
-          return { error: result.error };
-        }
-      }
-      
-      case "read_file": {
-        const result = await window.outerRim.project.readFile(projectPath, toolInput.path);
-        if (result.success) {
-          // Truncate very large files to avoid token limits
-          let content = result.content;
-          if (content.length > 50000) {
-            content = content.slice(0, 50000) + '\n\n... [truncated - file too large]';
-          }
-          return { 
-            success: true, 
-            path: toolInput.path,
-            content: content
-          };
-        } else {
-          return { error: result.error };
-        }
-      }
-      
-      case "write_file": {
-        const result = await window.outerRim.project.writeFile(projectPath, toolInput.path, toolInput.content);
-        if (result.success) {
-          return { 
-            success: true, 
-            path: toolInput.path,
-            message: `Wrote ${toolInput.content.length} chars to ${toolInput.path}`
-          };
-        } else {
-          return { error: result.error };
-        }
-      }
-      
-      default:
-        return { error: `Unknown tool: ${toolName}` };
-    }
-  } catch (err) {
-    return { error: err.message };
-  }
-}
-
-function formatSize(bytes) {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  return chatRuntime.get(chatId);
 }
 
 // ============================================
@@ -153,19 +34,20 @@ async function initCommander() {
   projects = data.projects || {};
   activeChatId = data.activeChatId || null;
   apiKey = data.apiKey || null;
-  
+
   if (Object.keys(chats).length === 0) {
     createNewChat();
   } else if (!activeChatId || !chats[activeChatId]) {
     activeChatId = Object.keys(chats)[0];
   }
-  
+
   renderChatTabs();
   renderProjectSelect();
   loadActiveChat();
   updateApiKeyStatus();
   setupCommanderListeners();
-  
+  setupAgentListeners();
+
   checkGitStatus();
   gitStatusInterval = setInterval(checkGitStatus, 10000);
 }
@@ -177,7 +59,7 @@ async function initCommander() {
 function updateApiKeyStatus() {
   const status = document.getElementById('api-key-status');
   const input = document.getElementById('api-key-input');
-  
+
   if (apiKey) {
     status.textContent = '✓ API key saved';
     status.className = 'api-key-status success';
@@ -194,7 +76,7 @@ function updateApiKeyStatus() {
 function toggleApiKeyVisibility() {
   const input = document.getElementById('api-key-input');
   const btn = document.getElementById('api-key-toggle');
-  
+
   if (input.type === 'password') {
     input.type = 'text';
     btn.textContent = '🙈';
@@ -209,7 +91,7 @@ function handleApiKeyInput(e) {
   const value = e.target.value.trim();
   if (e.target.dataset.masked === 'true' && value.includes('...')) return;
   e.target.dataset.masked = 'false';
-  
+
   if (value.startsWith('sk-ant-')) {
     apiKey = value;
     scheduleSave();
@@ -231,13 +113,23 @@ function toggleSettings() {
 
 function createNewChat() {
   const id = crypto.randomUUID();
-  const chat = { id, label: 'new', projectId: null, task: '', messages: [], changelog: [], createdAt: Date.now(), updatedAt: Date.now() };
+  const chat = {
+    id,
+    label: 'new',
+    projectId: null,
+    task: '',
+    messages: [],
+    changelog: [],
+    sessionId: null, // NEW: Agent SDK session continuity
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
   chats[id] = chat;
   activeChatId = id;
   scheduleSave();
   renderChatTabs();
   loadActiveChat();
-  
+
   setTimeout(() => {
     const labelInput = document.getElementById('chat-label-input');
     if (labelInput) { labelInput.focus(); labelInput.select(); }
@@ -257,6 +149,10 @@ function switchChat(chatId) {
 function deleteChat(chatId) {
   if (Object.keys(chats).length <= 1) { alert('Cannot delete the last chat'); return; }
   if (!confirm('Delete this chat?')) return;
+  // If there's a running turn for this chat, try to cancel it first.
+  const rt = chatRuntime.get(chatId);
+  if (rt?.running) window.outerRim.agent.cancel(chatId).catch(() => {});
+  chatRuntime.delete(chatId);
   delete chats[chatId];
   if (activeChatId === chatId) activeChatId = Object.keys(chats)[0];
   scheduleSave();
@@ -298,7 +194,7 @@ function getActiveProject() {
 }
 
 // ============================================
-// GIT OPERATIONS
+// GIT OPERATIONS (unchanged)
 // ============================================
 
 async function checkGitStatus() {
@@ -306,7 +202,7 @@ async function checkGitStatus() {
   const indicator = document.getElementById('git-status-indicator');
   const controls = document.getElementById('git-controls');
   const statusText = document.getElementById('git-status-text');
-  
+
   if (!project?.localPath) {
     indicator.className = 'git-status';
     indicator.textContent = '';
@@ -314,9 +210,9 @@ async function checkGitStatus() {
     controls.classList.add('hidden');
     return;
   }
-  
+
   controls.classList.remove('hidden');
-  
+
   try {
     const result = await window.outerRim.git.status(project.localPath);
     if (result.success) {
@@ -347,31 +243,40 @@ async function checkGitStatus() {
   }
 }
 
+// Commit message generation still calls the Anthropic API directly via
+// the browser. It's a one-shot, non-agentic call with no tool loop, so the
+// rate-limit concerns that drove this rewrite don't apply here.
 async function generateCommitMessage(projectPath) {
   if (!apiKey) return null;
-  
+
   try {
-    const diffResult = await window.outerRim.terminal.run(`cd "${projectPath}" && git diff --stat HEAD 2>/dev/null || git diff --stat 2>/dev/null`);
+    const diffResult = await window.outerRim.terminal.run(
+      `cd "${projectPath}" && git diff --stat HEAD 2>/dev/null || git diff --stat 2>/dev/null`
+    );
     const diff = diffResult.stdout || '';
-    
+
     if (!diff.trim()) {
-      const stagedResult = await window.outerRim.terminal.run(`cd "${projectPath}" && git diff --stat --cached 2>/dev/null`);
+      const stagedResult = await window.outerRim.terminal.run(
+        `cd "${projectPath}" && git diff --stat --cached 2>/dev/null`
+      );
       if (!stagedResult.stdout?.trim()) return 'Update files';
     }
-    
-    const fullDiffResult = await window.outerRim.terminal.run(`cd "${projectPath}" && git diff HEAD --no-color 2>/dev/null | head -200`);
+
+    const fullDiffResult = await window.outerRim.terminal.run(
+      `cd "${projectPath}" && git diff HEAD --no-color 2>/dev/null | head -200`
+    );
     const fullDiff = fullDiffResult.stdout || '';
-    
-    const response = await fetch(ANTHROPIC_API, {
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
+        'anthropic-dangerous-direct-browser-access': 'true',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514', // Use Sonnet for quick commit messages
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 100,
         messages: [{
           role: 'user',
@@ -385,7 +290,7 @@ ${fullDiff.slice(0, 3000)}`
         }]
       })
     });
-    
+
     if (response.ok) {
       const data = await response.json();
       let message = data.content?.[0]?.text?.trim() || 'Update files';
@@ -396,25 +301,25 @@ ${fullDiff.slice(0, 3000)}`
   } catch (err) {
     console.error('Failed to generate commit message:', err);
   }
-  
+
   return null;
 }
 
 async function gitPush() {
   const project = getActiveProject();
   if (!project?.localPath) return;
-  
+
   const messageInput = document.getElementById('commit-message');
   let message = messageInput.value.trim();
   const pushBtn = document.getElementById('git-push-btn');
   const statusText = document.getElementById('git-status-text');
-  
+
   pushBtn.disabled = true;
-  
+
   if (!message) {
     pushBtn.textContent = 'Generating...';
     statusText.textContent = 'Generating commit message...';
-    
+
     const generated = await generateCommitMessage(project.localPath);
     if (generated) {
       message = generated;
@@ -423,10 +328,10 @@ async function gitPush() {
       message = 'Update from Outer Rim';
     }
   }
-  
+
   pushBtn.textContent = 'Pushing...';
   statusText.textContent = 'Pushing...';
-  
+
   try {
     const result = await window.outerRim.git.push(project.localPath, message);
     if (result.success) {
@@ -451,14 +356,14 @@ async function gitPush() {
 async function gitPull() {
   const project = getActiveProject();
   if (!project?.localPath) return;
-  
+
   const pullBtn = document.getElementById('git-pull-btn');
   const statusText = document.getElementById('git-status-text');
-  
+
   pullBtn.disabled = true;
   pullBtn.textContent = 'Pulling...';
   statusText.textContent = 'Pulling...';
-  
+
   try {
     const result = await window.outerRim.git.pull(project.localPath);
     if (result.success) {
@@ -497,21 +402,21 @@ function scheduleSave() {
 function renderChatTabs() {
   const container = document.getElementById('chat-tabs');
   container.innerHTML = '';
-  
+
   Object.values(chats).sort((a, b) => b.updatedAt - a.updatedAt).forEach(chat => {
     const tab = document.createElement('div');
     tab.className = `chat-tab ${chat.id === activeChatId ? 'active' : ''}`;
     tab.dataset.id = chat.id;
-    
+
     const label = document.createElement('span');
     label.className = 'chat-tab-label';
     label.textContent = chat.label || 'new';
-    
+
     const close = document.createElement('button');
     close.className = 'chat-tab-close';
     close.textContent = '×';
     close.addEventListener('click', (e) => { e.stopPropagation(); deleteChat(chat.id); });
-    
+
     tab.appendChild(label);
     tab.appendChild(close);
     tab.addEventListener('click', () => switchChat(chat.id));
@@ -541,15 +446,20 @@ function loadActiveChat() {
   document.getElementById('project-select').value = chat.projectId || '';
   renderMessages();
   checkGitStatus();
+
+  // Reflect whether a turn is in flight for this chat.
+  const rt = getRuntime(activeChatId);
+  const sendBtn = document.getElementById('send-btn');
+  sendBtn.textContent = rt.running ? 'Cancel' : 'Send';
 }
 
 function renderMessages() {
   const container = document.getElementById('commander-messages');
   const chat = chats[activeChatId];
   if (!chat) { container.innerHTML = ''; return; }
-  
+
   container.innerHTML = '';
-  
+
   if (chat.changelog.length > 0) {
     const logDiv = document.createElement('div');
     logDiv.className = 'commander-changelog';
@@ -562,16 +472,18 @@ function renderMessages() {
     });
     container.appendChild(logDiv);
   }
-  
+
   chat.messages.forEach(msg => {
     const div = document.createElement('div');
     div.className = `commander-message ${msg.role}`;
-    
+
     if (msg.role === 'assistant' && msg.toolCalls) {
       let html = '';
       msg.toolCalls.forEach(tc => {
-        html += `<div class="tool-call"><span class="tool-name">🔧 ${tc.name}</span>`;
-        if (tc.input?.path !== undefined) html += `<span class="tool-path">${tc.input.path || '.'}</span>`;
+        html += `<div class="tool-call"><span class="tool-name">🔧 ${escapeHtml(tc.name)}</span>`;
+        if (tc.input?.file_path !== undefined) html += `<span class="tool-path">${escapeHtml(tc.input.file_path)}</span>`;
+        else if (tc.input?.path !== undefined) html += `<span class="tool-path">${escapeHtml(tc.input.path || '.')}</span>`;
+        else if (tc.input?.pattern !== undefined) html += `<span class="tool-path">${escapeHtml(tc.input.pattern)}</span>`;
         html += '</div>';
       });
       if (msg.content) {
@@ -579,14 +491,15 @@ function renderMessages() {
       }
       div.innerHTML = html;
     } else {
-      let content = typeof msg.content === 'string' ? msg.content : 
-        (Array.isArray(msg.content) ? msg.content.map(b => b.type === 'text' ? b.text : '').join('\n') : '');
+      const content = typeof msg.content === 'string'
+        ? msg.content
+        : (Array.isArray(msg.content) ? msg.content.map(b => b.type === 'text' ? b.text : '').join('\n') : '');
       div.innerHTML = `<div class="message-content">${formatMessage(content)}</div>`;
     }
-    
+
     container.appendChild(div);
   });
-  
+
   container.scrollTop = container.scrollHeight;
 }
 
@@ -619,213 +532,240 @@ function autoExpandTextarea(textarea) {
 }
 
 // ============================================
-// API INTERACTION WITH TOOLS
+// AGENT INTERACTION (via IPC → main process SDK)
 // ============================================
 
-function buildSystemPrompt() {
-  const chat = chats[activeChatId];
-  if (!chat) return '';
-  
-  let prompt = `You are Claude Opus, an elite AI coding assistant in Outer Rim.
-
-You have tools to read/write files in the user's local project. USE THEM - don't guess about code.
-
-GUIDELINES:
-- Use list_files and read_file to explore before answering
-- Use write_file to make changes directly
-- Be concise - the user sees what files you access
-- Confirm what you changed after writing
-
-`;
-  
-  const project = projects[chat.projectId];
-  if (project) {
-    prompt += `## Project: ${project.name}\n`;
-    if (project.localPath) prompt += `Path: ${project.localPath}\n`;
-    if (project.repo) prompt += `Repo: ${project.repo}\n`;
-    if (project.stack) prompt += `Stack: ${project.stack}\n`;
-    if (project.keyFiles) prompt += `Key files: ${project.keyFiles}\n`;
-    prompt += '\n';
-  } else {
-    prompt += '## No project selected - ask user to select one first.\n\n';
-  }
-  
-  if (chat.task) {
-    prompt += `## Task: ${chat.task}\n\n`;
-  }
-  
-  return prompt;
-}
-
 async function sendMessage() {
+  const sendBtn = document.getElementById('send-btn');
+  const rt = getRuntime(activeChatId);
+
+  // Send button doubles as Cancel while a turn is running.
+  if (rt.running) {
+    await window.outerRim.agent.cancel(activeChatId);
+    return;
+  }
+
   const input = document.getElementById('commander-input');
   const message = input.value.trim();
   if (!message) return;
-  
+
   if (!apiKey) {
     document.getElementById('commander-settings').classList.remove('hidden');
     document.getElementById('api-key-input').focus();
     return;
   }
-  
+
   const chat = chats[activeChatId];
   if (!chat) return;
-  
+
+  const project = getActiveProject();
+  if (!project?.localPath) {
+    alert('Select a project with a local path first (⚙ next to project selector).');
+    return;
+  }
+
+  // Add the user message locally and save.
   chat.messages.push({ role: 'user', content: message });
   chat.updatedAt = Date.now();
   input.value = '';
   input.style.height = 'auto';
   renderMessages();
   scheduleSave();
-  
+
+  // Drop a "Thinking..." placeholder we'll replace on first assistant message.
   const container = document.getElementById('commander-messages');
   const loadingDiv = document.createElement('div');
   loadingDiv.className = 'commander-message assistant loading';
   loadingDiv.innerHTML = '<div class="message-content">Thinking...</div>';
   container.appendChild(loadingDiv);
   container.scrollTop = container.scrollHeight;
-  
-  try {
-    // Build messages - only string content for clean history
-    let apiMessages = chat.messages
-      .filter(m => m.role === 'user' || m.role === 'assistant')
-      .filter(m => typeof m.content === 'string' && m.content.trim())
-      .map(m => ({ role: m.role, content: m.content }));
-    
-    let response = await fetch(ANTHROPIC_API, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 4096,
-        system: buildSystemPrompt(),
-        tools: TOOLS,
-        messages: apiMessages
-      })
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('API error response:', errorData);
-      throw new Error(`API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+
+  rt.running = true;
+  rt.loadingEl = loadingDiv;
+  rt.toolCards = new Map();
+  sendBtn.textContent = 'Cancel';
+
+  const res = await window.outerRim.agent.start({
+    chatId: chat.id,
+    prompt: message,
+    sessionId: chat.sessionId || null,
+    projectPath: project.localPath,
+    apiKey,
+    task: chat.task || '',
+  });
+
+  if (!res.ok) {
+    loadingDiv.remove();
+    chat.messages.push({ role: 'assistant', content: `Error: ${res.error}` });
+    chat.updatedAt = Date.now();
+    rt.running = false;
+    rt.loadingEl = null;
+    sendBtn.textContent = 'Send';
+    scheduleSave();
+    renderMessages();
+  }
+  // Otherwise messages flow in through setupAgentListeners().
+}
+
+// Translate streamed SDKMessages into our local chat.messages shape and
+// update the DOM live.
+function setupAgentListeners() {
+  window.outerRim.agent.onMessage(({ chatId, msg }) => {
+    const chat = chats[chatId];
+    if (!chat) return;
+    const rt = getRuntime(chatId);
+    const isActive = chatId === activeChatId;
+
+    switch (msg.type) {
+      case 'system':
+        if (msg.subtype === 'init') {
+          // Capture the SDK session id so we can resume this chat later.
+          chat.sessionId = msg.session_id;
+          scheduleSave();
+        } else if (msg.subtype === 'compact_boundary' && isActive) {
+          const marker = document.createElement('div');
+          marker.className = 'commander-message system';
+          marker.innerHTML = '<div class="message-content" style="opacity:.6;font-style:italic">— earlier turns compacted —</div>';
+          document.getElementById('commander-messages').appendChild(marker);
+        }
+        break;
+
+      case 'assistant': {
+        // Remove the "Thinking..." placeholder on the first assistant chunk.
+        if (rt.loadingEl) { rt.loadingEl.remove(); rt.loadingEl = null; }
+
+        // msg.message.content is an array of content blocks.
+        const blocks = msg.message?.content || [];
+        const textParts = [];
+        const toolCalls = [];
+
+        for (const block of blocks) {
+          if (block.type === 'text') {
+            textParts.push(block.text);
+          } else if (block.type === 'tool_use') {
+            toolCalls.push({ id: block.id, name: block.name, input: block.input });
+          }
+          // 'thinking' blocks are not rendered to keep the UI calm.
+        }
+
+        const assistantMsg = {
+          role: 'assistant',
+          content: textParts.join('\n'),
+          toolCalls: toolCalls.length ? toolCalls.map(t => ({ name: t.name, input: t.input })) : undefined,
+        };
+        chat.messages.push(assistantMsg);
+        chat.updatedAt = Date.now();
+        scheduleSave();
+
+        if (isActive) {
+          renderMessages();
+
+          // Track tool cards by id so a later tool_result can update them.
+          // renderMessages() just rewrote the DOM, so we grab the new nodes.
+          const messagesEl = document.getElementById('commander-messages');
+          const lastMsg = messagesEl.lastElementChild;
+          if (lastMsg && toolCalls.length) {
+            const toolNodes = lastMsg.querySelectorAll('.tool-call');
+            toolCalls.forEach((tc, i) => {
+              if (toolNodes[i]) rt.toolCards.set(tc.id, toolNodes[i]);
+            });
+          }
+        }
+        break;
+      }
+
+      case 'user': {
+        // Tool results come back as user messages in the SDK stream. We
+        // use them to mark the matching tool card done (or errored).
+        for (const block of msg.message?.content || []) {
+          if (block.type === 'tool_result') {
+            const card = rt.toolCards.get(block.tool_use_id);
+            if (card) {
+              card.classList.add(block.is_error ? 'tool-error' : 'tool-done');
+            }
+          }
+        }
+        break;
+      }
+
+      // result handled via onDone below.
+      default:
+        break;
     }
-    let data = await response.json();
-    
-    // Tool use loop
-    let conversationMessages = [...apiMessages];
-    let loopCount = 0;
-    const maxLoops = 10; // Prevent infinite loops
-    
-    while (data.stop_reason === 'tool_use' && loopCount < maxLoops) {
-      loopCount++;
-      loadingDiv.innerHTML = `<div class="message-content">Using tools (${loopCount})...</div>`;
-      
-      const toolUseBlocks = data.content.filter(b => b.type === 'tool_use');
-      const textBlocks = data.content.filter(b => b.type === 'text');
-      const textContent = textBlocks.map(b => b.text).join('\n');
-      
-      // Store for UI
-      const assistantMsg = {
+  });
+
+  window.outerRim.agent.onDone(({ chatId, sessionId, subtype, totalCostUsd, numTurns, errors }) => {
+    const chat = chats[chatId];
+    if (!chat) return;
+    const rt = getRuntime(chatId);
+
+    chat.sessionId = sessionId || chat.sessionId;
+    if (rt.loadingEl) { rt.loadingEl.remove(); rt.loadingEl = null; }
+
+    if (subtype !== 'success') {
+      // Non-success subtypes: error_max_turns, error_max_budget_usd, error_during_execution, error_max_structured_output_retries
+      const reason = subtype.replace('error_', '').replace(/_/g, ' ');
+      chat.messages.push({
         role: 'assistant',
-        content: textContent,
-        toolCalls: toolUseBlocks.map(t => ({ name: t.name, input: t.input }))
-      };
-      chat.messages.push(assistantMsg);
-      renderMessages();
-      
-      // Execute tools
-      const toolResults = [];
-      for (const toolUse of toolUseBlocks) {
-        console.log(`Tool: ${toolUse.name}`, toolUse.input);
-        const result = await executeTool(toolUse.name, toolUse.input);
-        console.log(`Result:`, result);
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: toolUse.id,
-          content: JSON.stringify(result)
-        });
-      }
-      
-      // Continue conversation
-      conversationMessages.push({ role: 'assistant', content: data.content });
-      conversationMessages.push({ role: 'user', content: toolResults });
-      
-      response = await fetch(ANTHROPIC_API, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          max_tokens: 4096,
-          system: buildSystemPrompt(),
-          tools: TOOLS,
-          messages: conversationMessages
-        })
+        content: `⚠ Stopped: ${reason}${errors?.length ? '\n' + errors.join('\n') : ''} · $${(totalCostUsd ?? 0).toFixed(4)} · ${numTurns} turns`,
       });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('API error response:', errorData);
-        throw new Error(`API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
-      }
-      data = await response.json();
     }
-    
-    // Final response
-    const finalText = data.content?.filter(b => b.type === 'text').map(b => b.text).join('\n') || '';
-    if (finalText) {
-      chat.messages.push({ role: 'assistant', content: finalText });
-    }
-    
     chat.updatedAt = Date.now();
     scheduleSave();
-    
-  } catch (error) {
-    console.error('API error:', error);
-    chat.messages.push({ role: 'assistant', content: `Error: ${error.message}` });
-  }
-  
-  loadingDiv.remove();
-  renderMessages();
-  setTimeout(checkGitStatus, 500);
+
+    rt.running = false;
+    if (chatId === activeChatId) {
+      document.getElementById('send-btn').textContent = 'Send';
+      renderMessages();
+      setTimeout(checkGitStatus, 500); // pick up any file changes
+    }
+  });
+
+  window.outerRim.agent.onError(({ chatId, message }) => {
+    const chat = chats[chatId];
+    if (!chat) return;
+    const rt = getRuntime(chatId);
+
+    if (rt.loadingEl) { rt.loadingEl.remove(); rt.loadingEl = null; }
+    chat.messages.push({ role: 'assistant', content: `Error: ${message}` });
+    chat.updatedAt = Date.now();
+    scheduleSave();
+
+    rt.running = false;
+    if (chatId === activeChatId) {
+      document.getElementById('send-btn').textContent = 'Send';
+      renderMessages();
+    }
+  });
 }
 
 async function clearChat() {
   const chat = chats[activeChatId];
   if (!chat || chat.messages.length === 0) return;
-  
+
   if (apiKey && chat.messages.length > 1) {
     const container = document.getElementById('commander-messages');
     const loadingDiv = document.createElement('div');
     loadingDiv.className = 'commander-message assistant loading';
     loadingDiv.innerHTML = '<div class="message-content">Summarizing...</div>';
     container.appendChild(loadingDiv);
-    
+
     try {
       const textMessages = chat.messages
         .filter(m => m.content && typeof m.content === 'string')
         .map(m => ({ role: m.role, content: m.content }));
-      
+
       if (textMessages.length > 0) {
-        const response = await fetch(ANTHROPIC_API, {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey,
             'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true'
+            'anthropic-dangerous-direct-browser-access': 'true',
           },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514', // Use Sonnet for summaries
+            model: 'claude-sonnet-4-20250514',
             max_tokens: 200,
             messages: [
               ...textMessages,
@@ -833,7 +773,7 @@ async function clearChat() {
             ]
           })
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           const summary = data.content?.[0]?.text || 'Work completed';
@@ -842,11 +782,12 @@ async function clearChat() {
         }
       }
     } catch (e) { console.error('Summary error:', e); }
-    
+
     loadingDiv.remove();
   }
-  
+
   chat.messages = [];
+  chat.sessionId = null; // new conversation, no SDK session to resume
   chat.updatedAt = Date.now();
   scheduleSave();
   renderMessages();
@@ -863,34 +804,34 @@ function setupCommanderListeners() {
     if (e.target.dataset.masked === 'true') { e.target.value = ''; e.target.dataset.masked = 'false'; }
   });
   document.getElementById('api-key-toggle').addEventListener('click', toggleApiKeyVisibility);
-  
+
   document.getElementById('new-chat-btn').addEventListener('click', createNewChat);
-  
+
   document.getElementById('chat-label-input').addEventListener('input', (e) => {
     const chat = chats[activeChatId];
     if (chat) { chat.label = e.target.value.trim() || 'new'; chat.updatedAt = Date.now(); scheduleSave(); renderChatTabs(); }
   });
-  
+
   document.getElementById('task-input').addEventListener('input', (e) => {
     const chat = chats[activeChatId];
     if (chat) { chat.task = e.target.value; chat.updatedAt = Date.now(); scheduleSave(); }
   });
-  
+
   document.getElementById('project-select').addEventListener('change', (e) => {
     if (e.target.value === '__new__') { openProjectModal(); e.target.value = chats[activeChatId]?.projectId || ''; return; }
     const chat = chats[activeChatId];
     if (chat) { chat.projectId = e.target.value || null; chat.updatedAt = Date.now(); scheduleSave(); checkGitStatus(); }
   });
-  
+
   document.getElementById('edit-project-btn').addEventListener('click', () => {
     const chat = chats[activeChatId];
     openProjectModal(chat?.projectId && projects[chat.projectId] ? chat.projectId : null);
   });
-  
+
   document.getElementById('send-btn').addEventListener('click', sendMessage);
-  
+
   const commanderInput = document.getElementById('commander-input');
-  
+
   commanderInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       if (e.shiftKey) {
@@ -901,23 +842,23 @@ function setupCommanderListeners() {
       }
     }
   });
-  
+
   commanderInput.addEventListener('input', () => {
     autoExpandTextarea(commanderInput);
   });
-  
+
   document.getElementById('clear-chat-btn').addEventListener('click', clearChat);
-  
+
   document.getElementById('git-push-btn').addEventListener('click', gitPush);
   document.getElementById('git-pull-btn').addEventListener('click', gitPull);
-  
+
   document.getElementById('project-modal-save').addEventListener('click', saveProjectModal);
   document.getElementById('project-modal-cancel').addEventListener('click', closeProjectModal);
   document.getElementById('project-modal-delete').addEventListener('click', deleteProjectModal);
   document.getElementById('project-modal-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'project-modal-overlay') closeProjectModal();
   });
-  
+
   document.getElementById('project-browse-btn').addEventListener('click', async () => {
     try {
       const selectedPath = await window.outerRim.project.browse();
@@ -932,7 +873,7 @@ function setupCommanderListeners() {
 }
 
 // ============================================
-// PROJECT MODAL
+// PROJECT MODAL (unchanged)
 // ============================================
 
 let editingProjectId = null;
@@ -942,7 +883,7 @@ function openProjectModal(projectId = null) {
   const modal = document.getElementById('project-modal-overlay');
   const title = document.getElementById('project-modal-title');
   const deleteBtn = document.getElementById('project-modal-delete');
-  
+
   if (projectId && projects[projectId]) {
     const p = projects[projectId];
     title.textContent = 'Edit Project';
@@ -961,7 +902,7 @@ function openProjectModal(projectId = null) {
     document.getElementById('project-files-input').value = '';
     deleteBtn.style.display = 'none';
   }
-  
+
   modal.classList.remove('hidden');
   document.getElementById('project-name-input').focus();
 }
@@ -979,9 +920,9 @@ function saveProjectModal() {
     stack: document.getElementById('project-stack-input').value.trim(),
     keyFiles: document.getElementById('project-files-input').value.trim()
   };
-  
+
   if (!config.name) { alert('Project name is required'); return; }
-  
+
   if (editingProjectId) {
     updateProject(editingProjectId, config);
   } else {
@@ -989,7 +930,7 @@ function saveProjectModal() {
     const chat = chats[activeChatId];
     if (chat) { chat.projectId = project.id; scheduleSave(); }
   }
-  
+
   closeProjectModal();
   loadActiveChat();
 }
