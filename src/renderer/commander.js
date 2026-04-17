@@ -1,8 +1,6 @@
 // ============================================
 // CLAUDE COMMANDER - Left Pane Chat Interface
-// Persistent memory, multiple chats, projects
-// Local file operations + Git push/pull
-// Auto-generates commit messages from diff
+// With local file tools for reading/writing project files
 // ============================================
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
@@ -14,6 +12,132 @@ let activeChatId = null;
 let apiKey = null;
 let saveTimeout = null;
 let gitStatusInterval = null;
+
+// ============================================
+// TOOL DEFINITIONS
+// ============================================
+
+const TOOLS = [
+  {
+    name: "list_files",
+    description: "List files and directories in the project. Returns names, types (file/directory), and sizes. Use this to explore the project structure.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Relative path within the project. Use '' or '.' for root, or 'src/components' for subdirectories."
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: "read_file",
+    description: "Read the contents of a file in the project. Returns the full file content as text.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Relative path to the file, e.g. 'src/app.js' or 'package.json'"
+        }
+      },
+      required: ["path"]
+    }
+  },
+  {
+    name: "write_file",
+    description: "Write content to a file in the project. Creates the file if it doesn't exist, overwrites if it does. Creates parent directories as needed.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Relative path to the file, e.g. 'src/newComponent.js'"
+        },
+        content: {
+          type: "string",
+          description: "The full content to write to the file"
+        }
+      },
+      required: ["path", "content"]
+    }
+  }
+];
+
+// ============================================
+// TOOL EXECUTION
+// ============================================
+
+async function executeTool(toolName, toolInput) {
+  const project = getActiveProject();
+  if (!project?.localPath) {
+    return { error: "No project selected or project has no local path configured." };
+  }
+  
+  const projectPath = project.localPath;
+  
+  try {
+    switch (toolName) {
+      case "list_files": {
+        const subPath = toolInput.path || '';
+        const result = await window.outerRim.project.listFiles(projectPath, subPath);
+        if (result.success) {
+          const formatted = result.files.map(f => 
+            `${f.isDir ? '📁' : '📄'} ${f.name}${f.isDir ? '/' : ''} ${f.size ? `(${formatSize(f.size)})` : ''}`
+          ).join('\n');
+          return { 
+            success: true, 
+            path: subPath || '.',
+            files: result.files,
+            formatted: formatted || '(empty directory)'
+          };
+        } else {
+          return { error: result.error };
+        }
+      }
+      
+      case "read_file": {
+        const result = await window.outerRim.project.readFile(projectPath, toolInput.path);
+        if (result.success) {
+          return { 
+            success: true, 
+            path: toolInput.path,
+            content: result.content,
+            size: result.content.length
+          };
+        } else {
+          return { error: result.error };
+        }
+      }
+      
+      case "write_file": {
+        const result = await window.outerRim.project.writeFile(projectPath, toolInput.path, toolInput.content);
+        if (result.success) {
+          return { 
+            success: true, 
+            path: toolInput.path,
+            message: `Successfully wrote ${toolInput.content.length} characters to ${toolInput.path}`
+          };
+        } else {
+          return { error: result.error };
+        }
+      }
+      
+      default:
+        return { error: `Unknown tool: ${toolName}` };
+    }
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
 
 // ============================================
 // INITIALIZATION
@@ -51,7 +175,7 @@ function updateApiKeyStatus() {
   const input = document.getElementById('api-key-input');
   
   if (apiKey) {
-    status.textContent = '\u2713 API key saved';
+    status.textContent = '✓ API key saved';
     status.className = 'api-key-status success';
     input.value = apiKey.slice(0, 10) + '...' + apiKey.slice(-4);
     input.dataset.masked = 'true';
@@ -69,11 +193,11 @@ function toggleApiKeyVisibility() {
   
   if (input.type === 'password') {
     input.type = 'text';
-    btn.textContent = '\ud83d\ude48';
+    btn.textContent = '🙈';
     if (input.dataset.masked === 'true' && apiKey) input.value = apiKey;
   } else {
     input.type = 'password';
-    btn.textContent = '\ud83d\udc41';
+    btn.textContent = '👁';
   }
 }
 
@@ -194,13 +318,13 @@ async function checkGitStatus() {
     if (result.success) {
       if (result.hasChanges) {
         indicator.className = 'git-status has-changes';
-        indicator.textContent = '\u25cf';
+        indicator.textContent = '●';
         indicator.title = `${result.changes.length} uncommitted change(s)`;
         statusText.textContent = `${result.changes.length} file(s) changed`;
         statusText.className = 'git-status-text has-changes';
       } else {
         indicator.className = 'git-status clean';
-        indicator.textContent = '\u2713';
+        indicator.textContent = '✓';
         indicator.title = 'Working tree clean';
         statusText.textContent = 'Clean';
         statusText.className = 'git-status-text clean';
@@ -223,17 +347,14 @@ async function generateCommitMessage(projectPath) {
   if (!apiKey) return null;
   
   try {
-    // Get git diff --stat for a summary of changes
     const diffResult = await window.outerRim.terminal.run(`cd "${projectPath}" && git diff --stat HEAD 2>/dev/null || git diff --stat 2>/dev/null`);
     const diff = diffResult.stdout || '';
     
     if (!diff.trim()) {
-      // Try staged changes
       const stagedResult = await window.outerRim.terminal.run(`cd "${projectPath}" && git diff --stat --cached 2>/dev/null`);
       if (!stagedResult.stdout?.trim()) return 'Update files';
     }
     
-    // Also get the actual diff for context (limited)
     const fullDiffResult = await window.outerRim.terminal.run(`cd "${projectPath}" && git diff HEAD --no-color 2>/dev/null | head -200`);
     const fullDiff = fullDiffResult.stdout || '';
     
@@ -264,7 +385,6 @@ ${fullDiff.slice(0, 3000)}`
     if (response.ok) {
       const data = await response.json();
       let message = data.content?.[0]?.text?.trim() || 'Update files';
-      // Clean up the message
       message = message.replace(/^["']|["']$/g, '').trim();
       if (message.length > 72) message = message.slice(0, 69) + '...';
       return message;
@@ -287,7 +407,6 @@ async function gitPush() {
   
   pushBtn.disabled = true;
   
-  // If no message, auto-generate one
   if (!message) {
     pushBtn.textContent = 'Generating...';
     statusText.textContent = 'Generating commit message...';
@@ -295,7 +414,7 @@ async function gitPush() {
     const generated = await generateCommitMessage(project.localPath);
     if (generated) {
       message = generated;
-      messageInput.value = message; // Show what we generated
+      messageInput.value = message;
     } else {
       message = 'Update from Outer Rim';
     }
@@ -307,7 +426,7 @@ async function gitPush() {
   try {
     const result = await window.outerRim.git.push(project.localPath, message);
     if (result.success) {
-      statusText.textContent = '\u2713 Pushed!';
+      statusText.textContent = '✓ Pushed!';
       statusText.className = 'git-status-text clean';
       messageInput.value = '';
       setTimeout(checkGitStatus, 1000);
@@ -339,7 +458,7 @@ async function gitPull() {
   try {
     const result = await window.outerRim.git.pull(project.localPath);
     if (result.success) {
-      statusText.textContent = '\u2713 Pulled!';
+      statusText.textContent = '✓ Pulled!';
       statusText.className = 'git-status-text clean';
       setTimeout(checkGitStatus, 1000);
     } else {
@@ -386,7 +505,7 @@ function renderChatTabs() {
     
     const close = document.createElement('button');
     close.className = 'chat-tab-close';
-    close.textContent = '\u00d7';
+    close.textContent = '×';
     close.addEventListener('click', (e) => { e.stopPropagation(); deleteChat(chat.id); });
     
     tab.appendChild(label);
@@ -430,7 +549,7 @@ function renderMessages() {
   if (chat.changelog.length > 0) {
     const logDiv = document.createElement('div');
     logDiv.className = 'commander-changelog';
-    logDiv.innerHTML = '<div class="changelog-header">\ud83d\udcdc Previous Work</div>';
+    logDiv.innerHTML = '<div class="changelog-header">📜 Previous Work</div>';
     chat.changelog.slice(0, 10).forEach(entry => {
       const item = document.createElement('div');
       item.className = 'changelog-item';
@@ -443,8 +562,25 @@ function renderMessages() {
   chat.messages.forEach(msg => {
     const div = document.createElement('div');
     div.className = `commander-message ${msg.role}`;
-    let content = typeof msg.content === 'string' ? msg.content : msg.content.map(b => b.type === 'text' ? b.text : '').join('\n');
-    div.innerHTML = `<div class="message-content">${formatMessage(content)}</div>`;
+    
+    if (msg.role === 'assistant' && msg.toolCalls) {
+      // Show tool calls
+      let html = '';
+      msg.toolCalls.forEach(tc => {
+        html += `<div class="tool-call"><span class="tool-name">🔧 ${tc.name}</span>`;
+        if (tc.input?.path) html += `<span class="tool-path">${tc.input.path}</span>`;
+        html += '</div>';
+      });
+      if (msg.content) {
+        html += `<div class="message-content">${formatMessage(msg.content)}</div>`;
+      }
+      div.innerHTML = html;
+    } else {
+      let content = typeof msg.content === 'string' ? msg.content : 
+        (Array.isArray(msg.content) ? msg.content.map(b => b.type === 'text' ? b.text : '').join('\n') : '');
+      div.innerHTML = `<div class="message-content">${formatMessage(content)}</div>`;
+    }
+    
     container.appendChild(div);
   });
   
@@ -452,6 +588,7 @@ function renderMessages() {
 }
 
 function formatMessage(text) {
+  if (!text) return '';
   let html = escapeHtml(text);
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="lang-$1">$2</code></pre>');
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -468,34 +605,49 @@ function escapeHtml(text) {
 }
 
 // ============================================
-// API INTERACTION
+// API INTERACTION WITH TOOLS
 // ============================================
 
 function buildSystemPrompt() {
   const chat = chats[activeChatId];
   if (!chat) return '';
   
-  let prompt = '';
+  let prompt = `You are Claude, an AI coding assistant integrated into Outer Rim, a workspace browser app.
+
+You have access to tools that let you read and write files in the user's local project. Use them to actually look at the code rather than guessing.
+
+IMPORTANT GUIDELINES:
+- When asked about the project, USE list_files and read_file to actually look at the code
+- When asked to make changes, USE write_file to write the changes directly
+- Be concise and direct - the user can see the files you're reading
+- After writing files, briefly confirm what you changed
+
+`;
+  
   const project = projects[chat.projectId];
   if (project) {
-    prompt += `## Project: ${project.name}\n`;
-    if (project.localPath) prompt += `Path: ${project.localPath}\n`;
-    if (project.repo) prompt += `Repo: ${project.repo}\n`;
-    if (project.stack) prompt += `Stack: ${project.stack}\n`;
-    if (project.keyFiles) prompt += `Key files:\n${project.keyFiles}\n`;
+    prompt += `## Current Project: ${project.name}\n`;
+    if (project.localPath) prompt += `Local Path: ${project.localPath}\n`;
+    if (project.repo) prompt += `GitHub Repo: ${project.repo}\n`;
+    if (project.stack) prompt += `Tech Stack: ${project.stack}\n`;
+    if (project.keyFiles) prompt += `Key Files:\n${project.keyFiles}\n`;
     prompt += '\n';
+  } else {
+    prompt += '## No project selected\nAsk the user to select a project first.\n\n';
   }
   
   if (chat.changelog.length > 0) {
-    prompt += '## Recent Work\n';
-    chat.changelog.slice(0, 10).forEach(entry => {
+    prompt += '## Recent Work in This Chat\n';
+    chat.changelog.slice(0, 5).forEach(entry => {
       prompt += `- [${new Date(entry.ts).toLocaleDateString()}] ${entry.summary}\n`;
     });
     prompt += '\n';
   }
   
-  if (chat.task) prompt += `## Current Task\n${chat.task}\n\n`;
-  prompt += 'You are Claude, helping with software development. Be concise and direct.';
+  if (chat.task) {
+    prompt += `## Current Task\n${chat.task}\n\n`;
+  }
+  
   return prompt;
 }
 
@@ -513,12 +665,14 @@ async function sendMessage() {
   const chat = chats[activeChatId];
   if (!chat) return;
   
+  // Add user message
   chat.messages.push({ role: 'user', content: message });
   chat.updatedAt = Date.now();
   input.value = '';
   renderMessages();
   scheduleSave();
   
+  // Show loading
   const container = document.getElementById('commander-messages');
   const loadingDiv = document.createElement('div');
   loadingDiv.className = 'commander-message assistant loading';
@@ -527,7 +681,15 @@ async function sendMessage() {
   container.scrollTop = container.scrollHeight;
   
   try {
-    const response = await fetch(ANTHROPIC_API, {
+    // Build API messages (excluding our internal toolCalls metadata)
+    const apiMessages = chat.messages.map(m => {
+      if (m.role === 'user' || m.role === 'assistant') {
+        return { role: m.role, content: m.content };
+      }
+      return m;
+    }).filter(m => m.content); // Filter out empty messages
+    
+    let response = await fetch(ANTHROPIC_API, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -539,37 +701,52 @@ async function sendMessage() {
         model: MODEL,
         max_tokens: 8096,
         system: buildSystemPrompt(),
-        messages: chat.messages.map(m => ({ role: m.role, content: m.content }))
+        tools: TOOLS,
+        messages: apiMessages
       })
     });
     
     if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const data = await response.json();
-    const assistantContent = data.content?.map(b => b.type === 'text' ? b.text : '').join('') || '';
-    chat.messages.push({ role: 'assistant', content: assistantContent });
-    chat.updatedAt = Date.now();
-    scheduleSave();
-  } catch (error) {
-    chat.messages.push({ role: 'assistant', content: `Error: ${error.message}` });
-  }
-  
-  loadingDiv.remove();
-  renderMessages();
-}
-
-async function clearChat() {
-  const chat = chats[activeChatId];
-  if (!chat || chat.messages.length === 0) return;
-  
-  if (apiKey) {
-    const container = document.getElementById('commander-messages');
-    const loadingDiv = document.createElement('div');
-    loadingDiv.className = 'commander-message assistant loading';
-    loadingDiv.innerHTML = '<div class="message-content">Summarizing...</div>';
-    container.appendChild(loadingDiv);
+    let data = await response.json();
     
-    try {
-      const response = await fetch(ANTHROPIC_API, {
+    // Handle tool use loop
+    while (data.stop_reason === 'tool_use') {
+      loadingDiv.innerHTML = '<div class="message-content">Using tools...</div>';
+      
+      const toolUseBlocks = data.content.filter(b => b.type === 'tool_use');
+      const textBlocks = data.content.filter(b => b.type === 'text');
+      const textContent = textBlocks.map(b => b.text).join('\n');
+      
+      // Store assistant message with tool calls for display
+      const assistantMsg = {
+        role: 'assistant',
+        content: textContent,
+        toolCalls: toolUseBlocks.map(t => ({ name: t.name, input: t.input }))
+      };
+      chat.messages.push(assistantMsg);
+      renderMessages();
+      
+      // Execute tools and collect results
+      const toolResults = [];
+      for (const toolUse of toolUseBlocks) {
+        console.log(`Executing tool: ${toolUse.name}`, toolUse.input);
+        const result = await executeTool(toolUse.name, toolUse.input);
+        console.log(`Tool result:`, result);
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content: JSON.stringify(result)
+        });
+      }
+      
+      // Add tool results as user message and continue
+      const updatedMessages = [
+        ...apiMessages,
+        { role: 'assistant', content: data.content },
+        { role: 'user', content: toolResults }
+      ];
+      
+      response = await fetch(ANTHROPIC_API, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -579,19 +756,83 @@ async function clearChat() {
         },
         body: JSON.stringify({
           model: MODEL,
-          max_tokens: 200,
-          messages: [
-            ...chat.messages.map(m => ({ role: m.role, content: m.content })),
-            { role: 'user', content: 'Summarize what was accomplished in 1-2 sentences. Be specific about files/functions. No preamble.' }
-          ]
+          max_tokens: 8096,
+          system: buildSystemPrompt(),
+          tools: TOOLS,
+          messages: updatedMessages
         })
       });
       
-      if (response.ok) {
-        const data = await response.json();
-        const summary = data.content?.[0]?.text || 'Work completed';
-        chat.changelog.unshift({ ts: Date.now(), summary: summary.trim() });
-        chat.changelog = chat.changelog.slice(0, 20);
+      if (!response.ok) throw new Error(`API error: ${response.status}`);
+      data = await response.json();
+      
+      // Update apiMessages for potential next iteration
+      apiMessages.push({ role: 'assistant', content: data.content });
+      apiMessages.push({ role: 'user', content: toolResults });
+    }
+    
+    // Final response
+    const finalText = data.content?.filter(b => b.type === 'text').map(b => b.text).join('\n') || '';
+    if (finalText) {
+      chat.messages.push({ role: 'assistant', content: finalText });
+    }
+    
+    chat.updatedAt = Date.now();
+    scheduleSave();
+    
+  } catch (error) {
+    console.error('API error:', error);
+    chat.messages.push({ role: 'assistant', content: `Error: ${error.message}` });
+  }
+  
+  loadingDiv.remove();
+  renderMessages();
+  
+  // Refresh git status in case files were written
+  setTimeout(checkGitStatus, 500);
+}
+
+async function clearChat() {
+  const chat = chats[activeChatId];
+  if (!chat || chat.messages.length === 0) return;
+  
+  if (apiKey && chat.messages.length > 1) {
+    const container = document.getElementById('commander-messages');
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'commander-message assistant loading';
+    loadingDiv.innerHTML = '<div class="message-content">Summarizing...</div>';
+    container.appendChild(loadingDiv);
+    
+    try {
+      const textMessages = chat.messages
+        .filter(m => m.content && typeof m.content === 'string')
+        .map(m => ({ role: m.role, content: m.content }));
+      
+      if (textMessages.length > 0) {
+        const response = await fetch(ANTHROPIC_API, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: 200,
+            messages: [
+              ...textMessages,
+              { role: 'user', content: 'Summarize what was accomplished in 1-2 sentences. Be specific about files changed. No preamble.' }
+            ]
+          })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const summary = data.content?.[0]?.text || 'Work completed';
+          chat.changelog.unshift({ ts: Date.now(), summary: summary.trim() });
+          chat.changelog = chat.changelog.slice(0, 20);
+        }
       }
     } catch (e) { console.error('Summary error:', e); }
     
@@ -657,7 +898,6 @@ function setupCommanderListeners() {
     if (e.target.id === 'project-modal-overlay') closeProjectModal();
   });
   
-  // Browse button with error handling
   document.getElementById('project-browse-btn').addEventListener('click', async () => {
     try {
       console.log('Browse button clicked');
