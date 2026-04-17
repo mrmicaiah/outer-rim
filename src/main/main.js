@@ -412,6 +412,27 @@ ipcMain.handle('sync:pull', async () => {
 });
 
 // ============================================
+// CLAUDE COMMANDER IPC HANDLERS
+// ============================================
+
+ipcMain.handle('commander:load', () => {
+  return {
+    chats: store.get('commander.chats') || {},
+    projects: store.get('commander.projects') || {},
+    activeChatId: store.get('commander.activeChatId') || null,
+    apiKey: store.get('commander.apiKey') || null
+  };
+});
+
+ipcMain.handle('commander:save', (event, data) => {
+  if (data.chats !== undefined) store.set('commander.chats', data.chats);
+  if (data.projects !== undefined) store.set('commander.projects', data.projects);
+  if (data.activeChatId !== undefined) store.set('commander.activeChatId', data.activeChatId);
+  if (data.apiKey !== undefined) store.set('commander.apiKey', data.apiKey);
+  return true;
+});
+
+// ============================================
 // SCREENSHOTS IPC HANDLERS
 // ============================================
 

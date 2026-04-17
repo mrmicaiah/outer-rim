@@ -36,6 +36,11 @@ contextBridge.exposeInMainWorld('outerRim', {
     get: () => ipcRenderer.invoke('scratchpad:get'),
     save: (content) => ipcRenderer.invoke('scratchpad:save', content),
   },
+  // Claude Commander
+  commander: {
+    load: () => ipcRenderer.invoke('commander:load'),
+    save: (data) => ipcRenderer.invoke('commander:save', data),
+  },
   // Menu events
   onMenuToggleDevTools: (callback) => ipcRenderer.on('menu:toggleDevTools', callback),
 });
