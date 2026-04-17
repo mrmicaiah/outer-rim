@@ -604,18 +604,20 @@ body {
 
 #commander-input {
   width: 100%;
-  min-height: 50px;
-  max-height: 120px;
+  min-height: 44px;
+  max-height: 200px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   color: var(--text-primary);
-  font-size: 12px;
-  padding: 8px;
-  resize: vertical;
+  font-size: 14px;
+  padding: 10px 12px;
+  resize: none;
   outline: none;
   font-family: inherit;
+  line-height: 1.4;
   margin-bottom: 6px;
+  overflow-y: auto;
 }
 
 #commander-input:focus { border-color: var(--accent); }
