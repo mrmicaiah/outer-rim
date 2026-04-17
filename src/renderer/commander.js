@@ -1,6 +1,7 @@
 // ============================================
 // CLAUDE COMMANDER - Left Pane Chat Interface
 // Persistent memory, multiple chats, projects
+// Local file operations + Git integration
 // ============================================
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
@@ -14,6 +15,7 @@ let apiKey = null;
 
 // Debounce timer
 let saveTimeout = null;
+let gitStatusInterval = null;
 
 // ============================================
 // INITIALIZATION
@@ -37,6 +39,10 @@ async function initCommander() {
   loadActiveChat();
   updateApiKeyStatus();
   setupCommanderListeners();
+  
+  // Start git status polling
+  updateGitStatus();
+  gitStatusInterval = setInterval(updateGitStatus, 10000); // Every 10s
 }
 
 // ============================================
@@ -118,13 +124,9 @@ function createNewChat() {
   renderChatTabs();
   loadActiveChat();
   
-  // Focus the label input
   setTimeout(() => {
     const labelInput = document.getElementById('chat-label-input');
-    if (labelInput) {
-      labelInput.focus();
-      labelInput.select();
-    }
+    if (labelInput) { labelInput.focus(); labelInput.select(); }
   }, 50);
   
   return chat;
@@ -139,16 +141,11 @@ function switchChat(chatId) {
 }
 
 function deleteChat(chatId) {
-  if (Object.keys(chats).length <= 1) {
-    alert('Cannot delete the last chat');
-    return;
-  }
+  if (Object.keys(chats).length <= 1) { alert('Cannot delete the last chat'); return; }
   if (!confirm('Delete this chat?')) return;
   
   delete chats[chatId];
-  if (activeChatId === chatId) {
-    activeChatId = Object.keys(chats)[0];
-  }
+  if (activeChatId === chatId) activeChatId = Object.keys(chats)[0];
   scheduleSave();
   renderChatTabs();
   loadActiveChat();
@@ -171,6 +168,7 @@ function updateProject(id, config) {
     projects[id] = { ...projects[id], ...config };
     scheduleSave();
     renderProjectSelect();
+    updateGitUI();
   }
 }
 
@@ -182,6 +180,130 @@ function deleteProject(id) {
   scheduleSave();
   renderProjectSelect();
   loadActiveChat();
+}
+
+function getCurrentProject() {
+  const chat = chats[activeChatId];
+  return chat?.projectId ? projects[chat.projectId] : null;
+}
+
+// ============================================
+// GIT OPERATIONS
+// ============================================
+
+async function updateGitStatus() {
+  const project = getCurrentProject();
+  const indicator = document.getElementById('git-status-indicator');
+  
+  if (!project?.localPath) {
+    indicator.classList.add('hidden');
+    return;
+  }
+  
+  try {
+    const result = await window.outerRim.git.status(project.localPath);
+    indicator.classList.remove('hidden');
+    
+    if (result.success) {
+      if (result.hasChanges) {
+        indicator.className = 'git-status has-changes';
+        indicator.textContent = `● ${result.changes.length}`;
+        indicator.title = `${result.changes.length} uncommitted changes`;
+      } else {
+        indicator.className = 'git-status clean';
+        indicator.textContent = '✓';
+        indicator.title = 'Working tree clean';
+      }
+    } else {
+      indicator.className = 'git-status error';
+      indicator.textContent = '!';
+      indicator.title = result.error || 'Git error';
+    }
+  } catch (err) {
+    indicator.classList.add('hidden');
+  }
+}
+
+function updateGitUI() {
+  const project = getCurrentProject();
+  const gitActions = document.getElementById('git-actions');
+  
+  if (project?.localPath) {
+    gitActions.classList.remove('hidden');
+    updateGitStatus();
+  } else {
+    gitActions.classList.add('hidden');
+    document.getElementById('git-status-indicator').classList.add('hidden');
+  }
+}
+
+async function gitPull() {
+  const project = getCurrentProject();
+  if (!project?.localPath) return;
+  
+  const btn = document.getElementById('git-pull-btn');
+  btn.disabled = true;
+  btn.textContent = '↻ Pulling...';
+  
+  try {
+    const result = await window.outerRim.git.pull(project.localPath);
+    if (result.success) {
+      showGitToast('✓ Pulled successfully');
+    } else {
+      showGitToast('✗ Pull failed: ' + result.error, true);
+    }
+  } catch (err) {
+    showGitToast('✗ Pull error: ' + err.message, true);
+  }
+  
+  btn.disabled = false;
+  btn.textContent = '⬇ Pull';
+  updateGitStatus();
+}
+
+async function gitPush() {
+  const project = getCurrentProject();
+  if (!project?.localPath) return;
+  
+  const btn = document.getElementById('git-push-btn');
+  const msgInput = document.getElementById('commit-message');
+  const message = msgInput.value.trim() || `Update from Outer Rim`;
+  
+  btn.disabled = true;
+  btn.textContent = '↻ Pushing...';
+  
+  try {
+    const result = await window.outerRim.git.push(project.localPath, message);
+    if (result.success) {
+      showGitToast('✓ Pushed successfully');
+      msgInput.value = '';
+    } else {
+      showGitToast('✗ Push failed: ' + result.error, true);
+    }
+  } catch (err) {
+    showGitToast('✗ Push error: ' + err.message, true);
+  }
+  
+  btn.disabled = false;
+  btn.textContent = '⬆ Push';
+  updateGitStatus();
+}
+
+function showGitToast(message, isError = false) {
+  // Simple toast notification
+  const existing = document.querySelector('.git-toast');
+  if (existing) existing.remove();
+  
+  const toast = document.createElement('div');
+  toast.className = `git-toast ${isError ? 'error' : 'success'}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  
+  setTimeout(() => toast.classList.add('show'), 10);
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
 }
 
 // ============================================
@@ -215,10 +337,7 @@ function renderChatTabs() {
     const close = document.createElement('button');
     close.className = 'chat-tab-close';
     close.textContent = '×';
-    close.addEventListener('click', (e) => {
-      e.stopPropagation();
-      deleteChat(chat.id);
-    });
+    close.addEventListener('click', (e) => { e.stopPropagation(); deleteChat(chat.id); });
     
     tab.appendChild(label);
     tab.appendChild(close);
@@ -250,6 +369,7 @@ function loadActiveChat() {
   document.getElementById('task-input').value = chat.task || '';
   document.getElementById('project-select').value = chat.projectId || '';
   renderMessages();
+  updateGitUI();
 }
 
 function renderMessages() {
@@ -315,6 +435,7 @@ function buildSystemPrompt() {
   const project = projects[chat.projectId];
   if (project) {
     prompt += `## Project: ${project.name}\n`;
+    if (project.localPath) prompt += `Local: ${project.localPath}\n`;
     if (project.repo) prompt += `Repo: ${project.repo}\n`;
     if (project.stack) prompt += `Stack: ${project.stack}\n`;
     if (project.keyFiles) prompt += `Key files:\n${project.keyFiles}\n`;
@@ -494,6 +615,7 @@ function setupCommanderListeners() {
       chat.projectId = e.target.value || null;
       chat.updatedAt = Date.now();
       scheduleSave();
+      updateGitUI();
     }
   });
   
@@ -505,6 +627,10 @@ function setupCommanderListeners() {
       openProjectModal();
     }
   });
+  
+  // Git actions
+  document.getElementById('git-pull-btn').addEventListener('click', gitPull);
+  document.getElementById('git-push-btn').addEventListener('click', gitPush);
   
   // Send / Clear
   document.getElementById('send-btn').addEventListener('click', sendMessage);
@@ -523,6 +649,7 @@ function setupCommanderListeners() {
   document.getElementById('project-modal-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'project-modal-overlay') closeProjectModal();
   });
+  document.getElementById('project-browse-btn').addEventListener('click', browseProjectFolder);
 }
 
 // ============================================
@@ -541,6 +668,7 @@ function openProjectModal(projectId = null) {
     const p = projects[projectId];
     title.textContent = 'Edit Project';
     document.getElementById('project-name-input').value = p.name || '';
+    document.getElementById('project-path-input').value = p.localPath || '';
     document.getElementById('project-repo-input').value = p.repo || '';
     document.getElementById('project-stack-input').value = p.stack || '';
     document.getElementById('project-files-input').value = p.keyFiles || '';
@@ -548,6 +676,7 @@ function openProjectModal(projectId = null) {
   } else {
     title.textContent = 'New Project';
     document.getElementById('project-name-input').value = '';
+    document.getElementById('project-path-input').value = '';
     document.getElementById('project-repo-input').value = '';
     document.getElementById('project-stack-input').value = '';
     document.getElementById('project-files-input').value = '';
@@ -563,9 +692,17 @@ function closeProjectModal() {
   editingProjectId = null;
 }
 
+async function browseProjectFolder() {
+  const path = await window.outerRim.project.browse();
+  if (path) {
+    document.getElementById('project-path-input').value = path;
+  }
+}
+
 function saveProjectModal() {
   const config = {
     name: document.getElementById('project-name-input').value.trim(),
+    localPath: document.getElementById('project-path-input').value.trim(),
     repo: document.getElementById('project-repo-input').value.trim(),
     stack: document.getElementById('project-stack-input').value.trim(),
     keyFiles: document.getElementById('project-files-input').value.trim()

@@ -48,12 +48,20 @@
               <button id="new-chat-btn" title="New Chat">+</button>
             </div>
             
-            <!-- Project Selector -->
+            <!-- Project Selector + Git Status -->
             <div class="commander-project-row">
               <select id="project-select">
                 <option value="">No Project</option>
               </select>
+              <span id="git-status-indicator" class="git-status hidden" title="Git status"></span>
               <button id="edit-project-btn" title="Edit Project">⚙</button>
+            </div>
+            
+            <!-- Git Actions (shown when project has localPath) -->
+            <div id="git-actions" class="git-actions hidden">
+              <input type="text" id="commit-message" placeholder="Commit message...">
+              <button id="git-pull-btn" class="btn-small" title="Pull latest">⬇ Pull</button>
+              <button id="git-push-btn" class="btn-small btn-primary" title="Commit & Push">⬆ Push</button>
             </div>
             
             <!-- Chat Label + Task -->
@@ -242,12 +250,22 @@
         <h3 id="project-modal-title">Edit Project</h3>
         <label>Project Name:</label>
         <input type="text" id="project-name-input" placeholder="e.g., Outer Rim">
+        
+        <label>Local Path:</label>
+        <div class="path-input-row">
+          <input type="text" id="project-path-input" placeholder="~/Projects/outer-rim">
+          <button id="project-browse-btn" class="btn-small">Browse</button>
+        </div>
+        
         <label>GitHub Repo:</label>
         <input type="text" id="project-repo-input" placeholder="e.g., mrmicaiah/outer-rim">
+        
         <label>Tech Stack:</label>
         <input type="text" id="project-stack-input" placeholder="e.g., Electron 29, vanilla JS">
+        
         <label>Key Files (one per line):</label>
         <textarea id="project-files-input" placeholder="app.js - UI logic\nmain.js - IPC handlers"></textarea>
+        
         <div class="modal-actions">
           <button id="project-modal-delete" class="btn-danger">Delete</button>
           <button id="project-modal-cancel" class="btn-secondary">Cancel</button>
