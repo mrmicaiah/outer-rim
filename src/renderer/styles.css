@@ -599,7 +599,12 @@ body {
   color: var(--text-primary);
 }
 
-#commander-close {
+.commander-header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.commander-header-actions button {
   background: none;
   border: none;
   color: var(--text-muted);
@@ -609,9 +614,80 @@ body {
   border-radius: 4px;
 }
 
-#commander-close:hover {
+.commander-header-actions button:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+/* Commander Settings */
+#commander-settings {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+}
+
+#commander-settings.hidden {
+  display: none;
+}
+
+.settings-row {
+  margin-bottom: 8px;
+}
+
+.settings-row:last-child {
+  margin-bottom: 0;
+}
+
+.settings-row label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.api-key-input-row {
+  display: flex;
+  gap: 4px;
+}
+
+.api-key-input-row input {
+  flex: 1;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 6px 8px;
+  font-family: 'SF Mono', monospace;
+  outline: none;
+}
+
+.api-key-input-row input:focus {
+  border-color: var(--accent);
+}
+
+.api-key-input-row button {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 14px;
+}
+
+.api-key-input-row button:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.api-key-status {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.api-key-status.success {
+  color: var(--success);
 }
 
 /* Chat List */
@@ -909,7 +985,7 @@ body {
 }
 
 /* ============================================
-   BOTTOM PANEL RESIZER
+   BOTTOM PANEL
    ============================================ */
 
 #bottom-panel-resizer {
@@ -922,10 +998,6 @@ body {
 #bottom-panel-resizer:hover {
   background: var(--accent);
 }
-
-/* ============================================
-   BOTTOM TOOL PANEL
-   ============================================ */
 
 #bottom-panel {
   height: var(--bottom-panel-height);
@@ -981,10 +1053,6 @@ body {
   display: flex;
   overflow: hidden;
 }
-
-/* ============================================
-   BOTTOM SECTIONS
-   ============================================ */
 
 .bottom-section {
   flex: 1;
@@ -1051,10 +1119,7 @@ body {
   background: var(--accent);
 }
 
-/* ============================================
-   SCREENSHOTS SECTION
-   ============================================ */
-
+/* Screenshots */
 #screenshots-section {
   flex: 1.2;
 }
@@ -1121,10 +1186,7 @@ body {
   font-size: 11px;
 }
 
-/* ============================================
-   TERMINAL SECTION
-   ============================================ */
-
+/* Terminal */
 #terminal-section {
   flex: 1;
 }
@@ -1185,10 +1247,7 @@ body {
   color: var(--text-muted);
 }
 
-/* ============================================
-   SCRATCHPAD SECTION
-   ============================================ */
-
+/* Scratchpad */
 #scratchpad-section {
   flex: 0.8;
 }
@@ -1208,48 +1267,6 @@ body {
 
 #scratchpad-content::placeholder {
   color: var(--text-muted);
-}
-
-/* ============================================
-   SCREENSHOT PREVIEW MODAL
-   ============================================ */
-
-#screenshot-preview-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-}
-
-#screenshot-preview-overlay.hidden {
-  display: none;
-}
-
-#screenshot-preview {
-  max-width: 90%;
-  max-height: 90%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
-
-#screenshot-preview-img {
-  max-width: 100%;
-  max-height: calc(90vh - 60px);
-  border-radius: 8px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-}
-
-.screenshot-preview-actions {
-  display: flex;
-  gap: 12px;
 }
 
 /* ============================================
@@ -1354,7 +1371,7 @@ body {
 }
 
 /* ============================================
-   EMPTY STATE OVERLAY
+   EMPTY STATE & MODALS
    ============================================ */
 
 #empty-state-overlay {
@@ -1407,14 +1424,11 @@ body {
   background: var(--accent-hover);
 }
 
-/* ============================================
-   MODALS
-   ============================================ */
-
 #modal-overlay,
 #tab-modal-overlay,
 #profile-modal-overlay,
-#project-modal-overlay {
+#project-modal-overlay,
+#screenshot-preview-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -1430,7 +1444,8 @@ body {
 #modal-overlay.hidden,
 #tab-modal-overlay.hidden,
 #profile-modal-overlay.hidden,
-#project-modal-overlay.hidden {
+#project-modal-overlay.hidden,
+#screenshot-preview-overlay.hidden {
   display: none;
 }
 
@@ -1567,10 +1582,7 @@ body {
   background: var(--danger-hover);
 }
 
-/* ============================================
-   PROFILE MODAL SPECIFIC
-   ============================================ */
-
+/* Profile Modal */
 .profile-modal-desc {
   font-size: 12px;
   color: var(--text-secondary);
@@ -1643,8 +1655,30 @@ body {
   flex-shrink: 0;
 }
 
+/* Screenshot Preview */
+#screenshot-preview {
+  max-width: 90%;
+  max-height: 90%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+#screenshot-preview-img {
+  max-width: 100%;
+  max-height: calc(90vh - 60px);
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.screenshot-preview-actions {
+  display: flex;
+  gap: 12px;
+}
+
 /* ============================================
-   SCROLLBAR STYLES
+   SCROLLBAR
    ============================================ */
 
 ::-webkit-scrollbar {
