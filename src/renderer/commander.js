@@ -656,9 +656,20 @@ function setupCommanderListeners() {
   document.getElementById('project-modal-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'project-modal-overlay') closeProjectModal();
   });
+  
+  // Browse button with error handling
   document.getElementById('project-browse-btn').addEventListener('click', async () => {
-    const path = await window.outerRim.project.browse();
-    if (path) document.getElementById('project-path-input').value = path;
+    try {
+      console.log('Browse button clicked');
+      const selectedPath = await window.outerRim.project.browse();
+      console.log('Selected path:', selectedPath);
+      if (selectedPath) {
+        document.getElementById('project-path-input').value = selectedPath;
+      }
+    } catch (err) {
+      console.error('Browse error:', err);
+      alert('Failed to open folder picker: ' + err.message);
+    }
   });
 }
 
