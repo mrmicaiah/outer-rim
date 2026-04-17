@@ -41,6 +41,21 @@ contextBridge.exposeInMainWorld('outerRim', {
     load: () => ipcRenderer.invoke('commander:load'),
     save: (data) => ipcRenderer.invoke('commander:save', data),
   },
+  // Local Project Operations
+  project: {
+    browse: () => ipcRenderer.invoke('project:browse'),
+    listFiles: (projectPath, subPath) => ipcRenderer.invoke('project:listFiles', projectPath, subPath),
+    readFile: (projectPath, filePath) => ipcRenderer.invoke('project:readFile', projectPath, filePath),
+    writeFile: (projectPath, filePath, content) => ipcRenderer.invoke('project:writeFile', projectPath, filePath, content),
+    createFile: (projectPath, filePath, content) => ipcRenderer.invoke('project:createFile', projectPath, filePath, content),
+    deleteFile: (projectPath, filePath) => ipcRenderer.invoke('project:deleteFile', projectPath, filePath),
+  },
+  // Git Operations
+  git: {
+    status: (projectPath) => ipcRenderer.invoke('git:status', projectPath),
+    push: (projectPath, message) => ipcRenderer.invoke('git:push', projectPath, message),
+    pull: (projectPath) => ipcRenderer.invoke('git:pull', projectPath),
+  },
   // Menu events
   onMenuToggleDevTools: (callback) => ipcRenderer.on('menu:toggleDevTools', callback),
 });
