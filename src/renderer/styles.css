@@ -1,6 +1,6 @@
 /* ============================================
    OUTER RIM - Dark Theme Styles
-   With Screenshots Panel
+   With Screenshots Panel and Session Profiles
    ============================================ */
 
 :root {
@@ -18,6 +18,7 @@
   --danger: #e55561;
   --danger-hover: #f06670;
   --success: #6bbd6e;
+  --warning: #e5a855;
   --title-bar-height: 32px;
   --notepad-width: 280px;
   --workspace-bar-height: 42px;
@@ -169,6 +170,7 @@ body {
   display: flex;
   align-items: center;
   padding: 0 8px;
+  gap: 6px;
 }
 
 .pane-tab-list {
@@ -251,14 +253,74 @@ body {
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  padding: 4px 10px;
-  font-size: 16px;
+  padding: 4px 8px;
+  font-size: 14px;
   border-radius: 4px;
+  flex-shrink: 0;
 }
 
 .pane-add-tab:hover {
   background: var(--bg-hover);
   color: var(--accent);
+}
+
+/* ============================================
+   SESSION PROFILE SELECTOR
+   ============================================ */
+
+.pane-profile-selector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.profile-select {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  padding: 3px 6px;
+  cursor: pointer;
+  max-width: 80px;
+  outline: none;
+}
+
+.profile-select:hover {
+  border-color: var(--accent);
+}
+
+.profile-select:focus {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.profile-manage-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 12px;
+  border-radius: 4px;
+}
+
+.profile-manage-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Profile indicator on tabs */
+.pane-tab-profile-badge {
+  font-size: 8px;
+  padding: 1px 4px;
+  background: var(--accent-dim);
+  color: var(--text-secondary);
+  border-radius: 3px;
+  margin-left: 4px;
+  flex-shrink: 0;
 }
 
 /* ============================================
@@ -973,7 +1035,8 @@ body {
    ============================================ */
 
 #modal-overlay,
-#tab-modal-overlay {
+#tab-modal-overlay,
+#profile-modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -987,12 +1050,14 @@ body {
 }
 
 #modal-overlay.hidden,
-#tab-modal-overlay.hidden {
+#tab-modal-overlay.hidden,
+#profile-modal-overlay.hidden {
   display: none;
 }
 
 #modal,
-#tab-modal {
+#tab-modal,
+#profile-modal {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 12px;
@@ -1002,14 +1067,16 @@ body {
 }
 
 #modal h3,
-#tab-modal h3 {
+#tab-modal h3,
+#profile-modal h3 {
   font-size: 18px;
   font-weight: 500;
   margin-bottom: 16px;
 }
 
 #modal input,
-#tab-modal input {
+#tab-modal input,
+#profile-modal input {
   width: 100%;
   padding: 12px;
   background: var(--bg-tertiary);
@@ -1022,7 +1089,8 @@ body {
 }
 
 #modal input:focus,
-#tab-modal input:focus {
+#tab-modal input:focus,
+#profile-modal input:focus {
   border-color: var(--accent);
 }
 
@@ -1098,6 +1166,82 @@ body {
 
 .btn-danger:hover {
   background: var(--danger-hover);
+}
+
+/* ============================================
+   PROFILE MODAL SPECIFIC
+   ============================================ */
+
+.profile-modal-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+#profile-list {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.profile-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+
+.profile-item-name {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.profile-item-default {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: 8px;
+}
+
+.profile-item-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.profile-item-actions button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+}
+
+.profile-item-actions button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.profile-item-actions button.delete:hover {
+  color: var(--danger);
+}
+
+.profile-add-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.profile-add-row input {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.profile-add-row button {
+  flex-shrink: 0;
 }
 
 /* ============================================
