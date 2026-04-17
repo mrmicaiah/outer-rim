@@ -17,6 +17,7 @@
     "electron-builder": "^24.9.1"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.110",
     "uuid": "^9.0.0"
   },
   "build": {
