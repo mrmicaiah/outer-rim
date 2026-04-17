@@ -3,7 +3,7 @@ const path = require('path');
 const Store = require('./store');
 const fs = require('fs');
 const os = require('os');
-const { exec } = require('child_process');
+const { execFile, spawn } = require('child_process');
 
 const store = new Store();
 
@@ -17,6 +17,41 @@ const PROJECTS_PATH = path.join(os.homedir(), 'Projects');
 
 // Cloud sync endpoint
 const SYNC_API = 'https://micaiahs-worker.micaiah-tasks.workers.dev/api/outerrim';
+
+// Shell environment for packaged app
+const SHELL_ENV = {
+  ...process.env,
+  PATH: `/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${process.env.PATH || ''}`,
+  HOME: os.homedir()
+};
+
+// Helper to run shell commands in packaged app
+function runCommand(command, options = {}) {
+  return new Promise((resolve) => {
+    const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/bash';
+    const shellArgs = process.platform === 'win32' ? ['/c', command] : ['-c', command];
+    
+    const child = spawn(shell, shellArgs, {
+      cwd: options.cwd || os.homedir(),
+      env: SHELL_ENV,
+      timeout: options.timeout || 60000
+    });
+    
+    let stdout = '';
+    let stderr = '';
+    
+    child.stdout.on('data', (data) => { stdout += data.toString(); });
+    child.stderr.on('data', (data) => { stderr += data.toString(); });
+    
+    child.on('error', (error) => {
+      resolve({ stdout, stderr: stderr || error.message, code: -1, error: error.message });
+    });
+    
+    child.on('close', (code) => {
+      resolve({ stdout, stderr, code: code || 0 });
+    });
+  });
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -82,7 +117,7 @@ async function syncWorkspacesToCloud() {
     
     if (response.ok) {
       const result = await response.json();
-      console.log(`\u2601\ufe0f Synced ${result.workspaces?.length || 0} workspaces to cloud`);
+      console.log(`☁️ Synced ${result.workspaces?.length || 0} workspaces to cloud`);
       if (result.workspaces) {
         mergeCloudWorkspaces(result.workspaces);
       }
@@ -478,7 +513,6 @@ ipcMain.handle('git:clone', async (event, repoName, localPath) => {
   
   // Check if folder already exists
   if (fs.existsSync(resolved)) {
-    // Check if it's already a git repo
     if (fs.existsSync(path.join(resolved, '.git'))) {
       return { success: true, message: 'Repository already exists', alreadyExists: true };
     } else {
@@ -486,23 +520,18 @@ ipcMain.handle('git:clone', async (event, repoName, localPath) => {
     }
   }
   
-  // Build clone URL (support both "owner/repo" and full URLs)
+  // Build clone URL
   let cloneUrl = repoName;
   if (!repoName.includes('://')) {
     cloneUrl = `https://github.com/${repoName}.git`;
   }
   
-  return new Promise((resolve) => {
-    const cmd = `git clone "${cloneUrl}" "${resolved}"`;
-    
-    exec(cmd, { timeout: 120000 }, (error, stdout, stderr) => {
-      if (error) {
-        resolve({ success: false, error: stderr || error.message });
-      } else {
-        resolve({ success: true, message: 'Repository cloned successfully' });
-      }
-    });
-  });
+  const result = await runCommand(`git clone "${cloneUrl}" "${resolved}"`, { timeout: 120000 });
+  if (result.code === 0) {
+    return { success: true, message: 'Repository cloned successfully' };
+  } else {
+    return { success: false, error: result.stderr || result.error || 'Clone failed' };
+  }
 });
 
 // Get git status
@@ -513,57 +542,45 @@ ipcMain.handle('git:status', async (event, projectPath) => {
     return { success: false, error: 'Not a git repository' };
   }
   
-  return new Promise((resolve) => {
-    exec('git status --porcelain', { cwd }, (error, stdout, stderr) => {
-      if (error) {
-        resolve({ success: false, error: stderr || error.message });
-      } else {
-        const changes = stdout.trim().split('\n').filter(Boolean).map(line => ({
-          status: line.substring(0, 2).trim(),
-          file: line.substring(3)
-        }));
-        resolve({ success: true, changes, hasChanges: changes.length > 0 });
-      }
-    });
-  });
+  const result = await runCommand('git status --porcelain', { cwd });
+  if (result.code === 0) {
+    const changes = result.stdout.trim().split('\n').filter(Boolean).map(line => ({
+      status: line.substring(0, 2).trim(),
+      file: line.substring(3)
+    }));
+    return { success: true, changes, hasChanges: changes.length > 0 };
+  } else {
+    return { success: false, error: result.stderr || 'Status check failed' };
+  }
 });
 
 // Git push (add all, commit, push)
 ipcMain.handle('git:push', async (event, projectPath, commitMessage) => {
   const cwd = resolvePath(projectPath);
   const message = commitMessage || `Update from Outer Rim - ${new Date().toLocaleString()}`;
+  const escapedMessage = message.replace(/"/g, '\\"');
   
-  return new Promise((resolve) => {
-    // Run: git add -A && git commit -m "message" && git push
-    const cmd = `git add -A && git commit -m "${message.replace(/"/g, '\\"')}" && git push`;
-    
-    exec(cmd, { cwd, timeout: 60000 }, (error, stdout, stderr) => {
-      if (error) {
-        // Check if it's just "nothing to commit"
-        if (stderr.includes('nothing to commit') || stdout.includes('nothing to commit')) {
-          resolve({ success: true, message: 'Nothing to commit' });
-        } else {
-          resolve({ success: false, error: stderr || error.message });
-        }
-      } else {
-        resolve({ success: true, message: stdout || 'Pushed successfully' });
-      }
-    });
-  });
+  const result = await runCommand(`git add -A && git commit -m "${escapedMessage}" && git push`, { cwd, timeout: 60000 });
+  
+  if (result.code === 0) {
+    return { success: true, message: result.stdout || 'Pushed successfully' };
+  } else if (result.stdout.includes('nothing to commit') || result.stderr.includes('nothing to commit')) {
+    return { success: true, message: 'Nothing to commit' };
+  } else {
+    return { success: false, error: result.stderr || result.error || 'Push failed' };
+  }
 });
 
 // Git pull
 ipcMain.handle('git:pull', async (event, projectPath) => {
   const cwd = resolvePath(projectPath);
-  return new Promise((resolve) => {
-    exec('git pull', { cwd, timeout: 60000 }, (error, stdout, stderr) => {
-      if (error) {
-        resolve({ success: false, error: stderr || error.message });
-      } else {
-        resolve({ success: true, message: stdout || 'Pulled successfully' });
-      }
-    });
-  });
+  
+  const result = await runCommand('git pull', { cwd, timeout: 60000 });
+  if (result.code === 0) {
+    return { success: true, message: result.stdout || 'Pulled successfully' };
+  } else {
+    return { success: false, error: result.stderr || result.error || 'Pull failed' };
+  }
 });
 
 // ============================================
@@ -636,11 +653,8 @@ ipcMain.handle('files:list', async (event, inputPath) => {
 // ============================================
 
 ipcMain.handle('terminal:run', async (event, command) => {
-  return new Promise((resolve) => {
-    exec(command, { cwd: os.homedir(), timeout: 30000 }, (error, stdout, stderr) => {
-      resolve({ stdout: stdout || '', stderr: stderr || (error ? error.message : ''), code: error ? error.code : 0 });
-    });
-  });
+  const result = await runCommand(command, { cwd: os.homedir(), timeout: 30000 });
+  return { stdout: result.stdout, stderr: result.stderr, code: result.code };
 });
 
 // ============================================
