@@ -17,29 +17,66 @@
     <!-- Main Content -->
     <div id="main-content">
       <div id="upper-section">
-        <!-- Dual Pane Browser -->
+        <!-- Dual Pane Container -->
         <div id="dual-pane-container">
-          <!-- Left Pane -->
-          <div id="left-pane" class="pane">
-            <div class="pane-tab-bar">
-              <div class="pane-tab-list" data-pane="left"></div>
-              <button class="pane-add-tab" data-pane="left" title="New Tab">+</button>
-              <div class="pane-profile-selector">
-                <select class="profile-select" data-pane="left" title="Session Profile">
-                  <option value="default">Default</option>
-                </select>
-                <button class="profile-manage-btn" title="Manage Profiles">⚙</button>
+          
+          <!-- Left Pane: Claude Commander -->
+          <div id="left-pane" class="commander-pane">
+            <!-- Commander Header -->
+            <div class="commander-header">
+              <span class="commander-title">🤖 Claude</span>
+              <button id="commander-settings-btn" title="Settings">⚙</button>
+            </div>
+            
+            <!-- Settings Panel (hidden by default) -->
+            <div id="commander-settings" class="hidden">
+              <div class="settings-row">
+                <label>API Key:</label>
+                <div class="api-key-input-row">
+                  <input type="password" id="api-key-input" placeholder="sk-ant-...">
+                  <button id="api-key-toggle" title="Show/Hide">👁</button>
+                </div>
+              </div>
+              <div class="settings-row">
+                <span id="api-key-status" class="api-key-status"></span>
               </div>
             </div>
-            <div class="pane-nav-bar hidden" data-pane="left">
-              <button class="nav-btn nav-back" data-pane="left" title="Back">◀</button>
-              <button class="nav-btn nav-forward" data-pane="left" title="Forward">▶</button>
-              <button class="nav-btn nav-refresh" data-pane="left" title="Refresh">↻</button>
-              <input type="text" class="nav-url" data-pane="left" placeholder="Enter URL or search...">
+            
+            <!-- Chat Tabs -->
+            <div class="commander-chat-bar">
+              <div id="chat-tabs"></div>
+              <button id="new-chat-btn" title="New Chat">+</button>
             </div>
-            <div class="pane-webview-container" data-pane="left">
-              <div class="pane-empty-state">
-                <p>Click + to open a tab</p>
+            
+            <!-- Project Selector -->
+            <div class="commander-project-row">
+              <select id="project-select">
+                <option value="">No Project</option>
+              </select>
+              <button id="edit-project-btn" title="Edit Project">⚙</button>
+            </div>
+            
+            <!-- Chat Label + Task -->
+            <div class="commander-task-area">
+              <div class="task-label-row">
+                <label>Label:</label>
+                <input type="text" id="chat-label-input" placeholder="e.g. focus-bug" maxlength="20">
+              </div>
+              <div class="task-desc-row">
+                <label>Task:</label>
+                <textarea id="task-input" placeholder="Describe what you're working on..."></textarea>
+              </div>
+            </div>
+            
+            <!-- Messages Area -->
+            <div id="commander-messages"></div>
+            
+            <!-- Input Area -->
+            <div class="commander-input-area">
+              <textarea id="commander-input" placeholder="Message Claude... (Cmd+Enter)"></textarea>
+              <div class="commander-actions">
+                <button id="clear-chat-btn" class="btn-secondary" title="Summarize & Clear">Clear</button>
+                <button id="send-btn" class="btn-primary">Send</button>
               </div>
             </div>
           </div>
@@ -47,7 +84,7 @@
           <!-- Pane Resizer -->
           <div id="pane-resizer"></div>
 
-          <!-- Right Pane -->
+          <!-- Right Pane: Browser -->
           <div id="right-pane" class="pane">
             <div class="pane-tab-bar">
               <div class="pane-tab-list" data-pane="right"></div>
@@ -143,66 +180,6 @@
       <div id="workspace-bar">
         <div id="workspace-list"></div>
         <button id="add-workspace" class="workspace-add-btn">+ New Workspace</button>
-      </div>
-    </div>
-
-    <!-- Claude Commander Panel (Slide-out from right) -->
-    <div id="commander-panel" class="collapsed">
-      <div id="commander-toggle" title="Toggle Claude Commander (Cmd+Shift+C)">🤖</div>
-      <div id="commander-content">
-        <div id="commander-header">
-          <span class="commander-title">🤖 Claude Commander</span>
-          <div class="commander-header-actions">
-            <button id="commander-settings-btn" title="Settings">⚙</button>
-            <button id="commander-close" title="Close">✕</button>
-          </div>
-        </div>
-        
-        <!-- Settings Panel (hidden by default) -->
-        <div id="commander-settings" class="hidden">
-          <div class="settings-row">
-            <label>API Key:</label>
-            <div class="api-key-input-row">
-              <input type="password" id="api-key-input" placeholder="sk-ant-...">
-              <button id="api-key-toggle" title="Show/Hide">👁</button>
-            </div>
-          </div>
-          <div class="settings-row">
-            <span id="api-key-status" class="api-key-status"></span>
-          </div>
-        </div>
-        
-        <!-- Chat List -->
-        <div id="commander-chat-list">
-          <div id="chat-tabs"></div>
-          <button id="new-chat-btn" title="New Chat">+ New</button>
-        </div>
-        
-        <!-- Project Selector -->
-        <div id="commander-project">
-          <select id="project-select">
-            <option value="">Select Project...</option>
-          </select>
-          <button id="edit-project-btn" title="Edit Project">⚙</button>
-        </div>
-        
-        <!-- Task Description -->
-        <div id="commander-task">
-          <label for="task-input">📋 Current Task:</label>
-          <textarea id="task-input" placeholder="Describe what you're working on..."></textarea>
-        </div>
-        
-        <!-- Chat Messages -->
-        <div id="commander-messages"></div>
-        
-        <!-- Input Area -->
-        <div id="commander-input-area">
-          <textarea id="commander-input" placeholder="Message Claude... (Cmd+Enter to send)"></textarea>
-          <div id="commander-actions">
-            <button id="clear-chat-btn" class="btn-secondary" title="Summarize & Clear">Clear</button>
-            <button id="send-btn" class="btn-primary">Send</button>
-          </div>
-        </div>
       </div>
     </div>
 

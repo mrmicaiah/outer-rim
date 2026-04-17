@@ -1,18 +1,18 @@
 // ============================================
-// CLAUDE COMMANDER - AI Chat Panel
-// Persistent memory, multiple chats, tool use
+// CLAUDE COMMANDER - Left Pane Chat Interface
+// Persistent memory, multiple chats, projects
 // ============================================
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-sonnet-4-20250514';
 
-// In-memory state (fast access)
-let chats = {};           // chatId -> chat object
-let projects = {};        // projectId -> project config
+// In-memory state
+let chats = {};
+let projects = {};
 let activeChatId = null;
 let apiKey = null;
 
-// Debounce timer for auto-save
+// Debounce timer
 let saveTimeout = null;
 
 // ============================================
@@ -20,14 +20,12 @@ let saveTimeout = null;
 // ============================================
 
 async function initCommander() {
-  // Load from disk via IPC
   const data = await window.outerRim.commander.load();
   chats = data.chats || {};
   projects = data.projects || {};
   activeChatId = data.activeChatId || null;
   apiKey = data.apiKey || null;
   
-  // If no chats, create a default one
   if (Object.keys(chats).length === 0) {
     createNewChat();
   } else if (!activeChatId || !chats[activeChatId]) {
@@ -52,7 +50,6 @@ function updateApiKeyStatus() {
   if (apiKey) {
     status.textContent = '✓ API key saved';
     status.className = 'api-key-status success';
-    // Show masked version
     input.value = apiKey.slice(0, 10) + '...' + apiKey.slice(-4);
     input.dataset.masked = 'true';
   } else {
@@ -70,7 +67,6 @@ function toggleApiKeyVisibility() {
   if (input.type === 'password') {
     input.type = 'text';
     btn.textContent = '🙈';
-    // If showing masked, show full key
     if (input.dataset.masked === 'true' && apiKey) {
       input.value = apiKey;
     }
@@ -82,13 +78,7 @@ function toggleApiKeyVisibility() {
 
 function handleApiKeyInput(e) {
   const value = e.target.value.trim();
-  
-  // Ignore if it's the masked value
-  if (e.target.dataset.masked === 'true' && value.includes('...')) {
-    return;
-  }
-  
-  // Clear masking state on real input
+  if (e.target.dataset.masked === 'true' && value.includes('...')) return;
   e.target.dataset.masked = 'false';
   
   if (value.startsWith('sk-ant-')) {
@@ -103,34 +93,8 @@ function handleApiKeyInput(e) {
 }
 
 function toggleSettings() {
-  const settings = document.getElementById('commander-settings');
-  settings.classList.toggle('hidden');
+  document.getElementById('commander-settings').classList.toggle('hidden');
 }
-
-// ============================================
-// DATA STRUCTURES
-// ============================================
-
-// Chat structure:
-// {
-//   id: string,
-//   name: string,
-//   projectId: string | null,
-//   task: string,
-//   messages: [{ role: 'user'|'assistant', content: string }],
-//   changelog: [{ ts: number, summary: string }],
-//   createdAt: number,
-//   updatedAt: number
-// }
-
-// Project structure:
-// {
-//   id: string,
-//   name: string,
-//   repo: string,
-//   stack: string,
-//   keyFiles: string
-// }
 
 // ============================================
 // CHAT MANAGEMENT
@@ -140,7 +104,7 @@ function createNewChat() {
   const id = crypto.randomUUID();
   const chat = {
     id,
-    name: 'New Chat',
+    label: 'new',
     projectId: null,
     task: '',
     messages: [],
@@ -153,6 +117,16 @@ function createNewChat() {
   scheduleSave();
   renderChatTabs();
   loadActiveChat();
+  
+  // Focus the label input
+  setTimeout(() => {
+    const labelInput = document.getElementById('chat-label-input');
+    if (labelInput) {
+      labelInput.focus();
+      labelInput.select();
+    }
+  }, 50);
+  
   return chat;
 }
 
@@ -165,27 +139,19 @@ function switchChat(chatId) {
 }
 
 function deleteChat(chatId) {
-  if (!confirm('Delete this chat?')) return;
-  delete chats[chatId];
-  
-  if (activeChatId === chatId) {
-    const remaining = Object.keys(chats);
-    activeChatId = remaining[0] || null;
-    if (!activeChatId) createNewChat();
+  if (Object.keys(chats).length <= 1) {
+    alert('Cannot delete the last chat');
+    return;
   }
+  if (!confirm('Delete this chat?')) return;
   
+  delete chats[chatId];
+  if (activeChatId === chatId) {
+    activeChatId = Object.keys(chats)[0];
+  }
   scheduleSave();
   renderChatTabs();
   loadActiveChat();
-}
-
-function renameChat(chatId, name) {
-  if (chats[chatId]) {
-    chats[chatId].name = name;
-    chats[chatId].updatedAt = Date.now();
-    scheduleSave();
-    renderChatTabs();
-  }
 }
 
 // ============================================
@@ -210,7 +176,6 @@ function updateProject(id, config) {
 
 function deleteProject(id) {
   delete projects[id];
-  // Clear project from any chats using it
   Object.values(chats).forEach(chat => {
     if (chat.projectId === id) chat.projectId = null;
   });
@@ -226,23 +191,8 @@ function deleteProject(id) {
 function scheduleSave() {
   clearTimeout(saveTimeout);
   saveTimeout = setTimeout(() => {
-    window.outerRim.commander.save({
-      chats,
-      projects,
-      activeChatId,
-      apiKey
-    });
+    window.outerRim.commander.save({ chats, projects, activeChatId, apiKey });
   }, 1000);
-}
-
-function saveNow() {
-  clearTimeout(saveTimeout);
-  window.outerRim.commander.save({
-    chats,
-    projects,
-    activeChatId,
-    apiKey
-  });
 }
 
 // ============================================
@@ -258,13 +208,9 @@ function renderChatTabs() {
     tab.className = `chat-tab ${chat.id === activeChatId ? 'active' : ''}`;
     tab.dataset.id = chat.id;
     
-    const name = document.createElement('span');
-    name.className = 'chat-tab-name';
-    name.textContent = chat.name || 'Untitled';
-    name.addEventListener('dblclick', () => {
-      const newName = prompt('Rename chat:', chat.name);
-      if (newName) renameChat(chat.id, newName);
-    });
+    const label = document.createElement('span');
+    label.className = 'chat-tab-label';
+    label.textContent = chat.label || 'new';
     
     const close = document.createElement('button');
     close.className = 'chat-tab-close';
@@ -274,7 +220,7 @@ function renderChatTabs() {
       deleteChat(chat.id);
     });
     
-    tab.appendChild(name);
+    tab.appendChild(label);
     tab.appendChild(close);
     tab.addEventListener('click', () => switchChat(chat.id));
     container.appendChild(tab);
@@ -283,9 +229,7 @@ function renderChatTabs() {
 
 function renderProjectSelect() {
   const select = document.getElementById('project-select');
-  const currentValue = select.value;
-  
-  select.innerHTML = '<option value="">Select Project...</option>';
+  select.innerHTML = '<option value="">No Project</option>';
   Object.values(projects).forEach(p => {
     const opt = document.createElement('option');
     opt.value = p.id;
@@ -294,46 +238,32 @@ function renderProjectSelect() {
   });
   select.innerHTML += '<option value="__new__">+ New Project...</option>';
   
-  // Restore selection
   const chat = chats[activeChatId];
-  if (chat?.projectId && projects[chat.projectId]) {
-    select.value = chat.projectId;
-  } else {
-    select.value = '';
-  }
+  select.value = chat?.projectId || '';
 }
 
 function loadActiveChat() {
   const chat = chats[activeChatId];
   if (!chat) return;
   
-  // Update task input
+  document.getElementById('chat-label-input').value = chat.label || '';
   document.getElementById('task-input').value = chat.task || '';
-  
-  // Update project select
-  const select = document.getElementById('project-select');
-  select.value = chat.projectId || '';
-  
-  // Render messages
+  document.getElementById('project-select').value = chat.projectId || '';
   renderMessages();
 }
 
 function renderMessages() {
   const container = document.getElementById('commander-messages');
   const chat = chats[activeChatId];
-  if (!chat) {
-    container.innerHTML = '';
-    return;
-  }
+  if (!chat) { container.innerHTML = ''; return; }
   
   container.innerHTML = '';
   
-  // Show changelog at top if exists
+  // Changelog
   if (chat.changelog.length > 0) {
     const logDiv = document.createElement('div');
     logDiv.className = 'commander-changelog';
     logDiv.innerHTML = '<div class="changelog-header">📜 Previous Work</div>';
-    
     chat.changelog.slice(0, 10).forEach(entry => {
       const item = document.createElement('div');
       item.className = 'changelog-item';
@@ -341,28 +271,15 @@ function renderMessages() {
       item.innerHTML = `<span class="changelog-time">${date}</span> ${escapeHtml(entry.summary)}`;
       logDiv.appendChild(item);
     });
-    
     container.appendChild(logDiv);
   }
   
-  // Render messages
-  chat.messages.forEach((msg, idx) => {
+  // Messages
+  chat.messages.forEach(msg => {
     const div = document.createElement('div');
     div.className = `commander-message ${msg.role}`;
-    
-    // Parse content - could be string or array
-    let content = '';
-    if (typeof msg.content === 'string') {
-      content = msg.content;
-    } else if (Array.isArray(msg.content)) {
-      content = msg.content.map(block => {
-        if (block.type === 'text') return block.text;
-        if (block.type === 'tool_use') return `🔧 Using tool: ${block.name}`;
-        if (block.type === 'tool_result') return `📋 Tool result`;
-        return '';
-      }).join('\n');
-    }
-    
+    let content = typeof msg.content === 'string' ? msg.content : 
+      msg.content.map(b => b.type === 'text' ? b.text : '').join('\n');
     div.innerHTML = `<div class="message-content">${formatMessage(content)}</div>`;
     container.appendChild(div);
   });
@@ -371,21 +288,11 @@ function renderMessages() {
 }
 
 function formatMessage(text) {
-  // Basic markdown-ish formatting
   let html = escapeHtml(text);
-  
-  // Code blocks
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="lang-$1">$2</code></pre>');
-  
-  // Inline code
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  
-  // Bold
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  
-  // Line breaks
   html = html.replace(/\n/g, '<br>');
-  
   return html;
 }
 
@@ -405,8 +312,6 @@ function buildSystemPrompt() {
   if (!chat) return '';
   
   let prompt = '';
-  
-  // Project context
   const project = projects[chat.projectId];
   if (project) {
     prompt += `## Project: ${project.name}\n`;
@@ -416,23 +321,19 @@ function buildSystemPrompt() {
     prompt += '\n';
   }
   
-  // Changelog
   if (chat.changelog.length > 0) {
     prompt += '## Recent Work\n';
     chat.changelog.slice(0, 10).forEach(entry => {
-      const date = new Date(entry.ts).toLocaleDateString();
-      prompt += `- [${date}] ${entry.summary}\n`;
+      prompt += `- [${new Date(entry.ts).toLocaleDateString()}] ${entry.summary}\n`;
     });
     prompt += '\n';
   }
   
-  // Current task
   if (chat.task) {
     prompt += `## Current Task\n${chat.task}\n\n`;
   }
   
-  prompt += `You are Claude, an AI assistant helping with software development. Be concise and direct. When reading files, request specific line ranges when possible to save context.`;
-  
+  prompt += 'You are Claude, helping with software development. Be concise and direct.';
   return prompt;
 }
 
@@ -442,7 +343,6 @@ async function sendMessage() {
   if (!message) return;
   
   if (!apiKey) {
-    // Open settings and focus the API key input
     document.getElementById('commander-settings').classList.remove('hidden');
     document.getElementById('api-key-input').focus();
     return;
@@ -451,20 +351,12 @@ async function sendMessage() {
   const chat = chats[activeChatId];
   if (!chat) return;
   
-  // Add user message
   chat.messages.push({ role: 'user', content: message });
   chat.updatedAt = Date.now();
   input.value = '';
   renderMessages();
   scheduleSave();
   
-  // Auto-name chat from first message
-  if (chat.name === 'New Chat' && chat.messages.length === 1) {
-    chat.name = message.slice(0, 30) + (message.length > 30 ? '...' : '');
-    renderChatTabs();
-  }
-  
-  // Show loading
   const container = document.getElementById('commander-messages');
   const loadingDiv = document.createElement('div');
   loadingDiv.className = 'commander-message assistant loading';
@@ -485,112 +377,65 @@ async function sendMessage() {
         model: MODEL,
         max_tokens: 8096,
         system: buildSystemPrompt(),
-        messages: chat.messages.map(m => ({
-          role: m.role,
-          content: m.content
-        }))
+        messages: chat.messages.map(m => ({ role: m.role, content: m.content }))
       })
     });
     
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`API error: ${response.status} - ${error}`);
-    }
-    
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
     const data = await response.json();
-    
-    // Extract text content
-    let assistantContent = '';
-    if (data.content) {
-      assistantContent = data.content.map(block => {
-        if (block.type === 'text') return block.text;
-        return '';
-      }).join('');
-    }
-    
-    // Add assistant message
+    const assistantContent = data.content?.map(b => b.type === 'text' ? b.text : '').join('') || '';
     chat.messages.push({ role: 'assistant', content: assistantContent });
     chat.updatedAt = Date.now();
     scheduleSave();
-    
   } catch (error) {
-    console.error('API Error:', error);
-    chat.messages.push({ 
-      role: 'assistant', 
-      content: `Error: ${error.message}` 
-    });
+    chat.messages.push({ role: 'assistant', content: `Error: ${error.message}` });
   }
   
   loadingDiv.remove();
   renderMessages();
 }
 
-// ============================================
-// CLEAR & SUMMARIZE
-// ============================================
-
 async function clearChat() {
   const chat = chats[activeChatId];
   if (!chat || chat.messages.length === 0) return;
   
-  if (!apiKey) {
-    // Just clear without summary
-    chat.messages = [];
-    chat.updatedAt = Date.now();
-    scheduleSave();
-    renderMessages();
-    return;
-  }
-  
-  // Show loading
-  const container = document.getElementById('commander-messages');
-  const loadingDiv = document.createElement('div');
-  loadingDiv.className = 'commander-message assistant loading';
-  loadingDiv.innerHTML = '<div class="message-content">Summarizing...</div>';
-  container.appendChild(loadingDiv);
-  
-  // Ask Claude to summarize
-  const summaryPrompt = `Summarize what was accomplished in this conversation in 1-2 sentences. Focus on what was built, fixed, or changed. Be specific about file names and functions when relevant. Start directly with the summary, no preamble.`;
-  
-  try {
-    const response = await fetch(ANTHROPIC_API, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 200,
-        messages: [
-          ...chat.messages.map(m => ({ role: m.role, content: m.content })),
-          { role: 'user', content: summaryPrompt }
-        ]
-      })
-    });
+  if (apiKey) {
+    const container = document.getElementById('commander-messages');
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'commander-message assistant loading';
+    loadingDiv.innerHTML = '<div class="message-content">Summarizing...</div>';
+    container.appendChild(loadingDiv);
     
-    if (response.ok) {
-      const data = await response.json();
-      const summary = data.content?.[0]?.text || 'Work completed';
-      
-      // Add to changelog
-      chat.changelog.unshift({
-        ts: Date.now(),
-        summary: summary.trim()
+    try {
+      const response = await fetch(ANTHROPIC_API, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 200,
+          messages: [
+            ...chat.messages.map(m => ({ role: m.role, content: m.content })),
+            { role: 'user', content: 'Summarize what was accomplished in 1-2 sentences. Be specific about files/functions. No preamble.' }
+          ]
+        })
       });
       
-      // Keep only last 20 entries
-      chat.changelog = chat.changelog.slice(0, 20);
-    }
-  } catch (e) {
-    console.error('Summary error:', e);
+      if (response.ok) {
+        const data = await response.json();
+        const summary = data.content?.[0]?.text || 'Work completed';
+        chat.changelog.unshift({ ts: Date.now(), summary: summary.trim() });
+        chat.changelog = chat.changelog.slice(0, 20);
+      }
+    } catch (e) { console.error('Summary error:', e); }
+    
+    loadingDiv.remove();
   }
   
-  loadingDiv.remove();
-  
-  // Clear messages
   chat.messages = [];
   chat.updatedAt = Date.now();
   scheduleSave();
@@ -602,15 +447,10 @@ async function clearChat() {
 // ============================================
 
 function setupCommanderListeners() {
-  // Toggle panel
-  document.getElementById('commander-toggle').addEventListener('click', toggleCommander);
-  document.getElementById('commander-close').addEventListener('click', toggleCommander);
-  
   // Settings
   document.getElementById('commander-settings-btn').addEventListener('click', toggleSettings);
   document.getElementById('api-key-input').addEventListener('input', handleApiKeyInput);
   document.getElementById('api-key-input').addEventListener('focus', (e) => {
-    // Clear masked value on focus so user can paste
     if (e.target.dataset.masked === 'true') {
       e.target.value = '';
       e.target.dataset.masked = 'false';
@@ -618,20 +458,19 @@ function setupCommanderListeners() {
   });
   document.getElementById('api-key-toggle').addEventListener('click', toggleApiKeyVisibility);
   
-  // New chat
+  // Chat management
   document.getElementById('new-chat-btn').addEventListener('click', createNewChat);
   
-  // Send message
-  document.getElementById('send-btn').addEventListener('click', sendMessage);
-  document.getElementById('commander-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      sendMessage();
+  // Label input
+  document.getElementById('chat-label-input').addEventListener('input', (e) => {
+    const chat = chats[activeChatId];
+    if (chat) {
+      chat.label = e.target.value.trim() || 'new';
+      chat.updatedAt = Date.now();
+      scheduleSave();
+      renderChatTabs();
     }
   });
-  
-  // Clear chat
-  document.getElementById('clear-chat-btn').addEventListener('click', clearChat);
   
   // Task input
   document.getElementById('task-input').addEventListener('input', (e) => {
@@ -645,23 +484,19 @@ function setupCommanderListeners() {
   
   // Project select
   document.getElementById('project-select').addEventListener('change', (e) => {
-    const value = e.target.value;
-    
-    if (value === '__new__') {
+    if (e.target.value === '__new__') {
       openProjectModal();
       e.target.value = chats[activeChatId]?.projectId || '';
       return;
     }
-    
     const chat = chats[activeChatId];
     if (chat) {
-      chat.projectId = value || null;
+      chat.projectId = e.target.value || null;
       chat.updatedAt = Date.now();
       scheduleSave();
     }
   });
   
-  // Edit project button
   document.getElementById('edit-project-btn').addEventListener('click', () => {
     const chat = chats[activeChatId];
     if (chat?.projectId && projects[chat.projectId]) {
@@ -671,6 +506,16 @@ function setupCommanderListeners() {
     }
   });
   
+  // Send / Clear
+  document.getElementById('send-btn').addEventListener('click', sendMessage);
+  document.getElementById('commander-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+  document.getElementById('clear-chat-btn').addEventListener('click', clearChat);
+  
   // Project modal
   document.getElementById('project-modal-save').addEventListener('click', saveProjectModal);
   document.getElementById('project-modal-cancel').addEventListener('click', closeProjectModal);
@@ -678,23 +523,6 @@ function setupCommanderListeners() {
   document.getElementById('project-modal-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'project-modal-overlay') closeProjectModal();
   });
-  
-  // Keyboard shortcut
-  document.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'c') {
-      e.preventDefault();
-      toggleCommander();
-    }
-  });
-}
-
-function toggleCommander() {
-  const panel = document.getElementById('commander-panel');
-  panel.classList.toggle('collapsed');
-  
-  if (!panel.classList.contains('collapsed')) {
-    document.getElementById('commander-input').focus();
-  }
 }
 
 // ============================================
@@ -743,16 +571,12 @@ function saveProjectModal() {
     keyFiles: document.getElementById('project-files-input').value.trim()
   };
   
-  if (!config.name) {
-    alert('Project name is required');
-    return;
-  }
+  if (!config.name) { alert('Project name is required'); return; }
   
   if (editingProjectId) {
     updateProject(editingProjectId, config);
   } else {
     const project = createProject(config);
-    // Assign to current chat
     const chat = chats[activeChatId];
     if (chat) {
       chat.projectId = project.id;
@@ -766,17 +590,15 @@ function saveProjectModal() {
 
 function deleteProjectModal() {
   if (!editingProjectId) return;
-  if (!confirm('Delete this project? Chats will keep their changelog.')) return;
-  
+  if (!confirm('Delete this project?')) return;
   deleteProject(editingProjectId);
   closeProjectModal();
 }
 
 // ============================================
-// INIT ON LOAD
+// INIT
 // ============================================
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Small delay to ensure main app initializes first
   setTimeout(initCommander, 100);
 });
