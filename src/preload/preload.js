@@ -12,6 +12,12 @@ contextBridge.exposeInMainWorld('outerRim', {
   notes: {
     update: (workspaceId, notes) => ipcRenderer.invoke('notes:update', workspaceId, notes),
   },
+  profiles: {
+    getAll: () => ipcRenderer.invoke('profiles:getAll'),
+    create: (name) => ipcRenderer.invoke('profiles:create', name),
+    delete: (id) => ipcRenderer.invoke('profiles:delete', id),
+    rename: (id, name) => ipcRenderer.invoke('profiles:rename', id, name),
+  },
   screenshots: {
     list: () => ipcRenderer.invoke('screenshots:list'),
     copy: (filepath) => ipcRenderer.invoke('screenshots:copy', filepath),
