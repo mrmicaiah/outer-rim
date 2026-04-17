@@ -1,20 +1,16 @@
 // ============================================
 // CLAUDE COMMANDER - Left Pane Chat Interface
 // Persistent memory, multiple chats, projects
-// Local file operations + Git integration
+// Local file operations + Git push/pull
 // ============================================
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-sonnet-4-20250514';
 
-// In-memory state
 let chats = {};
 let projects = {};
 let activeChatId = null;
 let apiKey = null;
-let projectsPath = '~/Projects'; // Will be set from main process
-
-// Debounce timer
 let saveTimeout = null;
 let gitStatusInterval = null;
 
@@ -23,9 +19,6 @@ let gitStatusInterval = null;
 // ============================================
 
 async function initCommander() {
-  // Get projects path from main process
-  projectsPath = await window.outerRim.project.getProjectsPath();
-  
   const data = await window.outerRim.commander.load();
   chats = data.chats || {};
   projects = data.projects || {};
@@ -44,9 +37,8 @@ async function initCommander() {
   updateApiKeyStatus();
   setupCommanderListeners();
   
-  // Start git status polling
-  updateGitStatus();
-  gitStatusInterval = setInterval(updateGitStatus, 10000); // Every 10s
+  checkGitStatus();
+  gitStatusInterval = setInterval(checkGitStatus, 10000);
 }
 
 // ============================================
@@ -77,9 +69,7 @@ function toggleApiKeyVisibility() {
   if (input.type === 'password') {
     input.type = 'text';
     btn.textContent = '\ud83d\ude48';
-    if (input.dataset.masked === 'true' && apiKey) {
-      input.value = apiKey;
-    }
+    if (input.dataset.masked === 'true' && apiKey) input.value = apiKey;
   } else {
     input.type = 'password';
     btn.textContent = '\ud83d\udc41';
@@ -112,16 +102,7 @@ function toggleSettings() {
 
 function createNewChat() {
   const id = crypto.randomUUID();
-  const chat = {
-    id,
-    label: 'new',
-    projectId: null,
-    task: '',
-    messages: [],
-    changelog: [],
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  };
+  const chat = { id, label: 'new', projectId: null, task: '', messages: [], changelog: [], createdAt: Date.now(), updatedAt: Date.now() };
   chats[id] = chat;
   activeChatId = id;
   scheduleSave();
@@ -132,7 +113,6 @@ function createNewChat() {
     const labelInput = document.getElementById('chat-label-input');
     if (labelInput) { labelInput.focus(); labelInput.select(); }
   }, 50);
-  
   return chat;
 }
 
@@ -142,12 +122,12 @@ function switchChat(chatId) {
   scheduleSave();
   renderChatTabs();
   loadActiveChat();
+  checkGitStatus();
 }
 
 function deleteChat(chatId) {
   if (Object.keys(chats).length <= 1) { alert('Cannot delete the last chat'); return; }
   if (!confirm('Delete this chat?')) return;
-  
   delete chats[chatId];
   if (activeChatId === chatId) activeChatId = Object.keys(chats)[0];
   scheduleSave();
@@ -172,150 +152,135 @@ function updateProject(id, config) {
     projects[id] = { ...projects[id], ...config };
     scheduleSave();
     renderProjectSelect();
-    updateGitUI();
   }
 }
 
 function deleteProject(id) {
   delete projects[id];
-  Object.values(chats).forEach(chat => {
-    if (chat.projectId === id) chat.projectId = null;
-  });
+  Object.values(chats).forEach(chat => { if (chat.projectId === id) chat.projectId = null; });
   scheduleSave();
   renderProjectSelect();
   loadActiveChat();
 }
 
-function getCurrentProject() {
+function getActiveProject() {
   const chat = chats[activeChatId];
   return chat?.projectId ? projects[chat.projectId] : null;
-}
-
-// Derive local path from repo name
-function getLocalPathFromRepo(repo) {
-  if (!repo) return '';
-  // Extract repo name from "owner/repo" or full URL
-  const parts = repo.replace(/\.git$/, '').split('/');
-  const repoName = parts[parts.length - 1];
-  return `${projectsPath}/${repoName}`;
 }
 
 // ============================================
 // GIT OPERATIONS
 // ============================================
 
-async function updateGitStatus() {
-  const project = getCurrentProject();
+async function checkGitStatus() {
+  const project = getActiveProject();
   const indicator = document.getElementById('git-status-indicator');
+  const controls = document.getElementById('git-controls');
+  const statusText = document.getElementById('git-status-text');
   
   if (!project?.localPath) {
-    indicator.classList.add('hidden');
+    indicator.className = 'git-status';
+    indicator.textContent = '';
+    indicator.title = 'No project';
+    controls.classList.add('hidden');
     return;
   }
   
+  controls.classList.remove('hidden');
+  
   try {
     const result = await window.outerRim.git.status(project.localPath);
-    indicator.classList.remove('hidden');
-    
     if (result.success) {
       if (result.hasChanges) {
         indicator.className = 'git-status has-changes';
-        indicator.textContent = `\u25cf ${result.changes.length}`;
-        indicator.title = `${result.changes.length} uncommitted changes`;
+        indicator.textContent = '\u25cf';
+        indicator.title = `${result.changes.length} uncommitted change(s)`;
+        statusText.textContent = `${result.changes.length} file(s) changed`;
+        statusText.className = 'git-status-text has-changes';
       } else {
         indicator.className = 'git-status clean';
         indicator.textContent = '\u2713';
         indicator.title = 'Working tree clean';
+        statusText.textContent = 'Clean';
+        statusText.className = 'git-status-text clean';
       }
     } else {
       indicator.className = 'git-status error';
       indicator.textContent = '!';
-      indicator.title = result.error || 'Git error';
+      indicator.title = result.error;
+      statusText.textContent = 'Not a git repo';
+      statusText.className = 'git-status-text error';
     }
   } catch (err) {
-    indicator.classList.add('hidden');
+    indicator.className = 'git-status error';
+    indicator.textContent = '!';
+    indicator.title = err.message;
   }
-}
-
-function updateGitUI() {
-  const project = getCurrentProject();
-  const gitActions = document.getElementById('git-actions');
-  
-  if (project?.localPath) {
-    gitActions.classList.remove('hidden');
-    updateGitStatus();
-  } else {
-    gitActions.classList.add('hidden');
-    document.getElementById('git-status-indicator').classList.add('hidden');
-  }
-}
-
-async function gitPull() {
-  const project = getCurrentProject();
-  if (!project?.localPath) return;
-  
-  const btn = document.getElementById('git-pull-btn');
-  btn.disabled = true;
-  btn.textContent = '\u21bb Pulling...';
-  
-  try {
-    const result = await window.outerRim.git.pull(project.localPath);
-    if (result.success) {
-      showGitToast('\u2713 Pulled successfully');
-    } else {
-      showGitToast('\u2717 Pull failed: ' + result.error, true);
-    }
-  } catch (err) {
-    showGitToast('\u2717 Pull error: ' + err.message, true);
-  }
-  
-  btn.disabled = false;
-  btn.textContent = '\u2b07 Pull';
-  updateGitStatus();
 }
 
 async function gitPush() {
-  const project = getCurrentProject();
+  const project = getActiveProject();
   if (!project?.localPath) return;
   
-  const btn = document.getElementById('git-push-btn');
-  const msgInput = document.getElementById('commit-message');
-  const message = msgInput.value.trim() || `Update from Outer Rim`;
+  const messageInput = document.getElementById('commit-message');
+  const message = messageInput.value.trim() || 'Update from Outer Rim';
+  const pushBtn = document.getElementById('git-push-btn');
+  const statusText = document.getElementById('git-status-text');
   
-  btn.disabled = true;
-  btn.textContent = '\u21bb Pushing...';
+  pushBtn.disabled = true;
+  pushBtn.textContent = 'Pushing...';
+  statusText.textContent = 'Pushing...';
   
   try {
     const result = await window.outerRim.git.push(project.localPath, message);
     if (result.success) {
-      showGitToast('\u2713 Pushed successfully');
-      msgInput.value = '';
+      statusText.textContent = '\u2713 Pushed!';
+      statusText.className = 'git-status-text clean';
+      messageInput.value = '';
+      setTimeout(checkGitStatus, 1000);
     } else {
-      showGitToast('\u2717 Push failed: ' + result.error, true);
+      statusText.textContent = 'Push failed';
+      statusText.className = 'git-status-text error';
+      alert('Push failed: ' + result.error);
     }
   } catch (err) {
-    showGitToast('\u2717 Push error: ' + err.message, true);
+    statusText.textContent = 'Push failed';
+    alert('Push error: ' + err.message);
+  } finally {
+    pushBtn.disabled = false;
+    pushBtn.textContent = 'Push';
   }
-  
-  btn.disabled = false;
-  btn.textContent = '\u2b06 Push';
-  updateGitStatus();
 }
 
-function showGitToast(message, isError = false) {
-  const existing = document.querySelector('.git-toast');
-  if (existing) existing.remove();
+async function gitPull() {
+  const project = getActiveProject();
+  if (!project?.localPath) return;
   
-  const toast = document.createElement('div');
-  toast.className = `git-toast ${isError ? 'error' : 'success'}`;
-  toast.textContent = message;
-  document.body.appendChild(toast);
+  const pullBtn = document.getElementById('git-pull-btn');
+  const statusText = document.getElementById('git-status-text');
   
-  setTimeout(() => toast.classList.add('show'), 10);
-  setTimeout(() => {
-    toast.classList.remove('show');
-    setTimeout(() => toast.remove(), 300);
-  }, 3000);
+  pullBtn.disabled = true;
+  pullBtn.textContent = 'Pulling...';
+  statusText.textContent = 'Pulling...';
+  
+  try {
+    const result = await window.outerRim.git.pull(project.localPath);
+    if (result.success) {
+      statusText.textContent = '\u2713 Pulled!';
+      statusText.className = 'git-status-text clean';
+      setTimeout(checkGitStatus, 1000);
+    } else {
+      statusText.textContent = 'Pull failed';
+      statusText.className = 'git-status-text error';
+      alert('Pull failed: ' + result.error);
+    }
+  } catch (err) {
+    statusText.textContent = 'Pull failed';
+    alert('Pull error: ' + err.message);
+  } finally {
+    pullBtn.disabled = false;
+    pullBtn.textContent = 'Pull';
+  }
 }
 
 // ============================================
@@ -368,7 +333,6 @@ function renderProjectSelect() {
     select.appendChild(opt);
   });
   select.innerHTML += '<option value="__new__">+ New Project...</option>';
-  
   const chat = chats[activeChatId];
   select.value = chat?.projectId || '';
 }
@@ -376,12 +340,11 @@ function renderProjectSelect() {
 function loadActiveChat() {
   const chat = chats[activeChatId];
   if (!chat) return;
-  
   document.getElementById('chat-label-input').value = chat.label || '';
   document.getElementById('task-input').value = chat.task || '';
   document.getElementById('project-select').value = chat.projectId || '';
   renderMessages();
-  updateGitUI();
+  checkGitStatus();
 }
 
 function renderMessages() {
@@ -391,7 +354,6 @@ function renderMessages() {
   
   container.innerHTML = '';
   
-  // Changelog
   if (chat.changelog.length > 0) {
     const logDiv = document.createElement('div');
     logDiv.className = 'commander-changelog';
@@ -399,19 +361,16 @@ function renderMessages() {
     chat.changelog.slice(0, 10).forEach(entry => {
       const item = document.createElement('div');
       item.className = 'changelog-item';
-      const date = new Date(entry.ts).toLocaleString();
-      item.innerHTML = `<span class="changelog-time">${date}</span> ${escapeHtml(entry.summary)}`;
+      item.innerHTML = `<span class="changelog-time">${new Date(entry.ts).toLocaleString()}</span> ${escapeHtml(entry.summary)}`;
       logDiv.appendChild(item);
     });
     container.appendChild(logDiv);
   }
   
-  // Messages
   chat.messages.forEach(msg => {
     const div = document.createElement('div');
     div.className = `commander-message ${msg.role}`;
-    let content = typeof msg.content === 'string' ? msg.content : 
-      msg.content.map(b => b.type === 'text' ? b.text : '').join('\n');
+    let content = typeof msg.content === 'string' ? msg.content : msg.content.map(b => b.type === 'text' ? b.text : '').join('\n');
     div.innerHTML = `<div class="message-content">${formatMessage(content)}</div>`;
     container.appendChild(div);
   });
@@ -447,7 +406,7 @@ function buildSystemPrompt() {
   const project = projects[chat.projectId];
   if (project) {
     prompt += `## Project: ${project.name}\n`;
-    if (project.localPath) prompt += `Local: ${project.localPath}\n`;
+    if (project.localPath) prompt += `Path: ${project.localPath}\n`;
     if (project.repo) prompt += `Repo: ${project.repo}\n`;
     if (project.stack) prompt += `Stack: ${project.stack}\n`;
     if (project.keyFiles) prompt += `Key files:\n${project.keyFiles}\n`;
@@ -462,10 +421,7 @@ function buildSystemPrompt() {
     prompt += '\n';
   }
   
-  if (chat.task) {
-    prompt += `## Current Task\n${chat.task}\n\n`;
-  }
-  
+  if (chat.task) prompt += `## Current Task\n${chat.task}\n\n`;
   prompt += 'You are Claude, helping with software development. Be concise and direct.';
   return prompt;
 }
@@ -580,79 +536,45 @@ async function clearChat() {
 // ============================================
 
 function setupCommanderListeners() {
-  // Settings
   document.getElementById('commander-settings-btn').addEventListener('click', toggleSettings);
   document.getElementById('api-key-input').addEventListener('input', handleApiKeyInput);
   document.getElementById('api-key-input').addEventListener('focus', (e) => {
-    if (e.target.dataset.masked === 'true') {
-      e.target.value = '';
-      e.target.dataset.masked = 'false';
-    }
+    if (e.target.dataset.masked === 'true') { e.target.value = ''; e.target.dataset.masked = 'false'; }
   });
   document.getElementById('api-key-toggle').addEventListener('click', toggleApiKeyVisibility);
   
-  // Chat management
   document.getElementById('new-chat-btn').addEventListener('click', createNewChat);
   
-  // Label input
   document.getElementById('chat-label-input').addEventListener('input', (e) => {
     const chat = chats[activeChatId];
-    if (chat) {
-      chat.label = e.target.value.trim() || 'new';
-      chat.updatedAt = Date.now();
-      scheduleSave();
-      renderChatTabs();
-    }
+    if (chat) { chat.label = e.target.value.trim() || 'new'; chat.updatedAt = Date.now(); scheduleSave(); renderChatTabs(); }
   });
   
-  // Task input
   document.getElementById('task-input').addEventListener('input', (e) => {
     const chat = chats[activeChatId];
-    if (chat) {
-      chat.task = e.target.value;
-      chat.updatedAt = Date.now();
-      scheduleSave();
-    }
+    if (chat) { chat.task = e.target.value; chat.updatedAt = Date.now(); scheduleSave(); }
   });
   
-  // Project select
   document.getElementById('project-select').addEventListener('change', (e) => {
-    if (e.target.value === '__new__') {
-      openProjectModal();
-      e.target.value = chats[activeChatId]?.projectId || '';
-      return;
-    }
+    if (e.target.value === '__new__') { openProjectModal(); e.target.value = chats[activeChatId]?.projectId || ''; return; }
     const chat = chats[activeChatId];
-    if (chat) {
-      chat.projectId = e.target.value || null;
-      chat.updatedAt = Date.now();
-      scheduleSave();
-      updateGitUI();
-    }
+    if (chat) { chat.projectId = e.target.value || null; chat.updatedAt = Date.now(); scheduleSave(); checkGitStatus(); }
   });
   
   document.getElementById('edit-project-btn').addEventListener('click', () => {
     const chat = chats[activeChatId];
-    if (chat?.projectId && projects[chat.projectId]) {
-      openProjectModal(chat.projectId);
-    } else {
-      openProjectModal();
-    }
+    openProjectModal(chat?.projectId && projects[chat.projectId] ? chat.projectId : null);
   });
   
-  // Git actions
-  document.getElementById('git-pull-btn').addEventListener('click', gitPull);
-  document.getElementById('git-push-btn').addEventListener('click', gitPush);
-  
-  // Send / Clear
   document.getElementById('send-btn').addEventListener('click', sendMessage);
   document.getElementById('commander-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      sendMessage();
-    }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendMessage(); }
   });
   document.getElementById('clear-chat-btn').addEventListener('click', clearChat);
+  
+  // Git controls
+  document.getElementById('git-push-btn').addEventListener('click', gitPush);
+  document.getElementById('git-pull-btn').addEventListener('click', gitPull);
   
   // Project modal
   document.getElementById('project-modal-save').addEventListener('click', saveProjectModal);
@@ -661,15 +583,9 @@ function setupCommanderListeners() {
   document.getElementById('project-modal-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'project-modal-overlay') closeProjectModal();
   });
-  document.getElementById('project-browse-btn').addEventListener('click', browseProjectFolder);
-  
-  // Auto-fill local path when repo changes
-  document.getElementById('project-repo-input').addEventListener('input', (e) => {
-    const pathInput = document.getElementById('project-path-input');
-    // Only auto-fill if path is empty or matches the pattern
-    if (!pathInput.value || pathInput.value.startsWith(projectsPath)) {
-      pathInput.value = getLocalPathFromRepo(e.target.value);
-    }
+  document.getElementById('project-browse-btn').addEventListener('click', async () => {
+    const path = await window.outerRim.project.browse();
+    if (path) document.getElementById('project-path-input').value = path;
   });
 }
 
@@ -684,31 +600,28 @@ function openProjectModal(projectId = null) {
   const modal = document.getElementById('project-modal-overlay');
   const title = document.getElementById('project-modal-title');
   const deleteBtn = document.getElementById('project-modal-delete');
-  const saveBtn = document.getElementById('project-modal-save');
   
   if (projectId && projects[projectId]) {
     const p = projects[projectId];
     title.textContent = 'Edit Project';
     document.getElementById('project-name-input').value = p.name || '';
-    document.getElementById('project-repo-input').value = p.repo || '';
     document.getElementById('project-path-input').value = p.localPath || '';
+    document.getElementById('project-repo-input').value = p.repo || '';
     document.getElementById('project-stack-input').value = p.stack || '';
     document.getElementById('project-files-input').value = p.keyFiles || '';
     deleteBtn.style.display = 'block';
-    saveBtn.textContent = 'Save';
   } else {
     title.textContent = 'New Project';
     document.getElementById('project-name-input').value = '';
-    document.getElementById('project-repo-input').value = '';
     document.getElementById('project-path-input').value = '';
+    document.getElementById('project-repo-input').value = '';
     document.getElementById('project-stack-input').value = '';
     document.getElementById('project-files-input').value = '';
     deleteBtn.style.display = 'none';
-    saveBtn.textContent = 'Clone & Create';
   }
   
   modal.classList.remove('hidden');
-  document.getElementById('project-repo-input').focus();
+  document.getElementById('project-name-input').focus();
 }
 
 function closeProjectModal() {
@@ -716,77 +629,23 @@ function closeProjectModal() {
   editingProjectId = null;
 }
 
-async function browseProjectFolder() {
-  const path = await window.outerRim.project.browse();
-  if (path) {
-    document.getElementById('project-path-input').value = path;
-  }
-}
-
-async function saveProjectModal() {
-  const repoInput = document.getElementById('project-repo-input').value.trim();
-  const pathInput = document.getElementById('project-path-input').value.trim();
-  const nameInput = document.getElementById('project-name-input').value.trim();
-  
-  // Derive name from repo if not provided
-  const name = nameInput || repoInput.split('/').pop() || 'Untitled';
-  const localPath = pathInput || getLocalPathFromRepo(repoInput);
-  
-  if (!repoInput && !editingProjectId) {
-    alert('Please enter a GitHub repository (e.g., owner/repo)');
-    return;
-  }
-  
+function saveProjectModal() {
   const config = {
-    name,
-    repo: repoInput,
-    localPath,
+    name: document.getElementById('project-name-input').value.trim(),
+    localPath: document.getElementById('project-path-input').value.trim(),
+    repo: document.getElementById('project-repo-input').value.trim(),
     stack: document.getElementById('project-stack-input').value.trim(),
     keyFiles: document.getElementById('project-files-input').value.trim()
   };
   
-  // For new projects, clone the repo
-  if (!editingProjectId && repoInput) {
-    const saveBtn = document.getElementById('project-modal-save');
-    saveBtn.disabled = true;
-    saveBtn.textContent = 'Cloning...';
-    
-    try {
-      const result = await window.outerRim.git.clone(repoInput, localPath);
-      
-      if (!result.success) {
-        alert('Clone failed: ' + result.error);
-        saveBtn.disabled = false;
-        saveBtn.textContent = 'Clone & Create';
-        return;
-      }
-      
-      if (result.alreadyExists) {
-        showGitToast('Using existing repository');
-      } else {
-        showGitToast('\u2713 Repository cloned!');
-      }
-    } catch (err) {
-      alert('Clone error: ' + err.message);
-      saveBtn.disabled = false;
-      saveBtn.textContent = 'Clone & Create';
-      return;
-    }
-    
-    saveBtn.disabled = false;
-    saveBtn.textContent = 'Clone & Create';
-  }
+  if (!config.name) { alert('Project name is required'); return; }
   
-  // Create or update project
   if (editingProjectId) {
     updateProject(editingProjectId, config);
   } else {
     const project = createProject(config);
     const chat = chats[activeChatId];
-    if (chat) {
-      chat.projectId = project.id;
-      scheduleSave();
-    }
+    if (chat) { chat.projectId = project.id; scheduleSave(); }
   }
   
   closeProjectModal();
@@ -795,7 +654,7 @@ async function saveProjectModal() {
 
 function deleteProjectModal() {
   if (!editingProjectId) return;
-  if (!confirm('Delete this project? (Local files will not be deleted)')) return;
+  if (!confirm('Delete this project?')) return;
   deleteProject(editingProjectId);
   closeProjectModal();
 }
@@ -804,6 +663,4 @@ function deleteProjectModal() {
 // INIT
 // ============================================
 
-document.addEventListener('DOMContentLoaded', () => {
-  setTimeout(initCommander, 100);
-});
+document.addEventListener('DOMContentLoaded', () => setTimeout(initCommander, 100));

@@ -24,8 +24,11 @@
           <div id="left-pane" class="commander-pane">
             <!-- Commander Header -->
             <div class="commander-header">
-              <span class="commander-title">\ud83e\udd16 Claude</span>
-              <button id="commander-settings-btn" title="Settings">\u2699</button>
+              <span class="commander-title">🤖 Claude</span>
+              <div class="commander-header-actions">
+                <span id="git-status-indicator" class="git-status" title="Git status"></span>
+                <button id="commander-settings-btn" title="Settings">⚙</button>
+              </div>
             </div>
             
             <!-- Settings Panel (hidden by default) -->
@@ -34,7 +37,7 @@
                 <label>API Key:</label>
                 <div class="api-key-input-row">
                   <input type="password" id="api-key-input" placeholder="sk-ant-...">
-                  <button id="api-key-toggle" title="Show/Hide">\ud83d\udc41</button>
+                  <button id="api-key-toggle" title="Show/Hide">👁</button>
                 </div>
               </div>
               <div class="settings-row">
@@ -48,20 +51,22 @@
               <button id="new-chat-btn" title="New Chat">+</button>
             </div>
             
-            <!-- Project Selector + Git Status -->
+            <!-- Project Selector -->
             <div class="commander-project-row">
               <select id="project-select">
                 <option value="">No Project</option>
               </select>
-              <span id="git-status-indicator" class="git-status hidden" title="Git status"></span>
-              <button id="edit-project-btn" title="Edit Project">\u2699</button>
+              <button id="edit-project-btn" title="Edit Project">⚙</button>
             </div>
             
-            <!-- Git Actions (shown when project has localPath) -->
-            <div id="git-actions" class="git-actions hidden">
-              <input type="text" id="commit-message" placeholder="Commit message...">
-              <button id="git-pull-btn" class="btn-small" title="Pull latest">\u2b07 Pull</button>
-              <button id="git-push-btn" class="btn-small btn-primary" title="Commit & Push">\u2b06 Push</button>
+            <!-- Git Controls (shown when project has localPath) -->
+            <div id="git-controls" class="hidden">
+              <div class="git-controls-row">
+                <input type="text" id="commit-message" placeholder="Commit message...">
+                <button id="git-pull-btn" class="btn-small" title="Pull">Pull</button>
+                <button id="git-push-btn" class="btn-small btn-primary" title="Push">Push</button>
+              </div>
+              <div id="git-status-text" class="git-status-text"></div>
             </div>
             
             <!-- Chat Label + Task -->
@@ -101,13 +106,13 @@
                 <select class="profile-select" data-pane="right" title="Session Profile">
                   <option value="default">Default</option>
                 </select>
-                <button class="profile-manage-btn" title="Manage Profiles">\u2699</button>
+                <button class="profile-manage-btn" title="Manage Profiles">⚙</button>
               </div>
             </div>
             <div class="pane-nav-bar hidden" data-pane="right">
-              <button class="nav-btn nav-back" data-pane="right" title="Back">\u25c0</button>
-              <button class="nav-btn nav-forward" data-pane="right" title="Forward">\u25b6</button>
-              <button class="nav-btn nav-refresh" data-pane="right" title="Refresh">\u21bb</button>
+              <button class="nav-btn nav-back" data-pane="right" title="Back">◀</button>
+              <button class="nav-btn nav-forward" data-pane="right" title="Forward">▶</button>
+              <button class="nav-btn nav-refresh" data-pane="right" title="Refresh">↻</button>
               <input type="text" class="nav-url" data-pane="right" placeholder="Enter URL or search...">
             </div>
             <div class="pane-webview-container" data-pane="right">
@@ -123,14 +128,14 @@
           <!-- Notepad Panel -->
           <div id="notepad-panel">
             <div class="notepad-header">
-              <span class="notepad-title">\ud83d\udcdd Notes</span>
-              <button id="notepad-toggle" title="Collapse">\u25c0</button>
+              <span class="notepad-title">📝 Notes</span>
+              <button id="notepad-toggle" title="Collapse">◀</button>
             </div>
             <textarea id="notepad-content" placeholder="Workspace notes..."></textarea>
           </div>
 
           <!-- Notepad Expand Button (when collapsed) -->
-          <button id="notepad-expand" class="hidden" title="Expand Notes">\ud83d\udcdd</button>
+          <button id="notepad-expand" class="hidden" title="Expand Notes">📝</button>
         </div>
 
         <!-- Bottom Panel Resizer -->
@@ -140,16 +145,16 @@
         <div id="bottom-panel">
           <div class="bottom-panel-header">
             <span class="bottom-panel-title">Tools</span>
-            <button id="bottom-panel-toggle" title="Toggle Panel">\u25bc</button>
+            <button id="bottom-panel-toggle" title="Toggle Panel">▼</button>
           </div>
           <div class="bottom-panel-content">
             <!-- Screenshots Section -->
             <div id="screenshots-section" class="bottom-section">
               <div class="bottom-section-header">
-                <span>\ud83d\udcf8 Screenshots</span>
+                <span>📸 Screenshots</span>
                 <div class="bottom-section-actions">
-                  <button id="screenshots-refresh" title="Refresh">\u21bb</button>
-                  <button id="screenshots-delete-all" class="danger-btn" title="Delete All">\ud83d\uddd1\ufe0f</button>
+                  <button id="screenshots-refresh" title="Refresh">↻</button>
+                  <button id="screenshots-delete-all" class="danger-btn" title="Delete All">🗑️</button>
                 </div>
               </div>
               <div id="screenshots-list"></div>
@@ -161,7 +166,7 @@
             <!-- Terminal Section -->
             <div id="terminal-section" class="bottom-section">
               <div class="bottom-section-header">
-                <span>\ud83d\udcbb Terminal</span>
+                <span>💻 Terminal</span>
               </div>
               <div id="terminal-output"></div>
               <div class="terminal-input-row">
@@ -176,7 +181,7 @@
             <!-- Scratchpad Section -->
             <div id="scratchpad-section" class="bottom-section">
               <div class="bottom-section-header">
-                <span>\ud83d\udcdd Scratchpad</span>
+                <span>📝 Scratchpad</span>
               </div>
               <textarea id="scratchpad-content" placeholder="Quick notes..."></textarea>
             </div>
@@ -193,7 +198,7 @@
 
     <!-- Empty State Overlay -->
     <div id="empty-state-overlay" class="hidden">
-      <div class="empty-icon">\ud83d\ude80</div>
+      <div class="empty-icon">🚀</div>
       <h2>Welcome to Outer Rim</h2>
       <p>Create a workspace to get started</p>
       <button id="empty-create-workspace">Create Workspace</button>
@@ -247,19 +252,18 @@
     <!-- Project Edit Modal -->
     <div id="project-modal-overlay" class="hidden">
       <div id="project-modal">
-        <h3 id="project-modal-title">New Project</h3>
-        
-        <label>GitHub Repo:</label>
-        <input type="text" id="project-repo-input" placeholder="owner/repo (e.g., mrmicaiah/outer-rim)">
+        <h3 id="project-modal-title">Edit Project</h3>
+        <label>Project Name:</label>
+        <input type="text" id="project-name-input" placeholder="e.g., Outer Rim">
         
         <label>Local Path:</label>
         <div class="path-input-row">
-          <input type="text" id="project-path-input" placeholder="Auto-filled from repo" readonly>
+          <input type="text" id="project-path-input" placeholder="~/Projects/outer-rim">
           <button id="project-browse-btn" class="btn-small">Browse</button>
         </div>
         
-        <label>Project Name:</label>
-        <input type="text" id="project-name-input" placeholder="Auto-filled from repo">
+        <label>GitHub Repo (optional):</label>
+        <input type="text" id="project-repo-input" placeholder="e.g., mrmicaiah/outer-rim">
         
         <label>Tech Stack:</label>
         <input type="text" id="project-stack-input" placeholder="e.g., Electron 29, vanilla JS">
@@ -270,7 +274,7 @@
         <div class="modal-actions">
           <button id="project-modal-delete" class="btn-danger">Delete</button>
           <button id="project-modal-cancel" class="btn-secondary">Cancel</button>
-          <button id="project-modal-save" class="btn-primary">Clone & Create</button>
+          <button id="project-modal-save" class="btn-primary">Save</button>
         </div>
       </div>
     </div>
