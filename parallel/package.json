@@ -6,7 +6,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --enable-logging --dev",
-    "build:mac": "electron-builder --mac",
+    "build:icon": "bash assets/build-icon.sh",
+    "build:mac": "bash assets/build-icon.sh && electron-builder --mac",
     "build:win": "electron-builder --win",
     "build:all": "electron-builder --mac --win"
   },
@@ -33,10 +34,15 @@
       "**/*",
       "!dist/**",
       "!.git/**",
-      "!*.md"
+      "!*.md",
+      "!assets/generate-icon.py",
+      "!assets/build-icon.sh",
+      "!assets/icon.png",
+      "!assets/icon.iconset/**"
     ],
     "asar": false,
     "mac": {
+      "icon": "assets/icon.icns",
       "category": "public.app-category.productivity",
       "target": [
         { "target": "dmg", "arch": ["arm64", "x64"] },
