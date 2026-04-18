@@ -6,7 +6,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --enable-logging --dev",
-    "postinstall": "electron-rebuild -f -w node-pty",
+    "postinstall": "npx --yes @electron/rebuild -f -w node-pty",
     "build:icon": "bash assets/build-icon.sh",
     "build:mac": "bash assets/build-icon.sh && electron-builder --mac",
     "build:win": "electron-builder --win",
