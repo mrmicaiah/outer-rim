@@ -1,0 +1,63 @@
+{
+  "name": "perimeter",
+  "version": "1.0.0",
+  "description": "Terminal + browser workspace for running Claude Code side-by-side with the web",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging --dev",
+    "postinstall": "electron-rebuild -f -w node-pty",
+    "build:icon": "bash assets/build-icon.sh",
+    "build:mac": "bash assets/build-icon.sh && electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:all": "electron-builder --mac --win"
+  },
+  "keywords": [
+    "terminal",
+    "claude-code",
+    "electron",
+    "workspace"
+  ],
+  "author": "Micaiah",
+  "license": "MIT",
+  "dependencies": {
+    "node-pty": "^1.0.0",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0",
+    "xterm-addon-web-links": "^0.9.0"
+  },
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^24.9.1",
+    "@electron/rebuild": "^3.6.0"
+  },
+  "build": {
+    "appId": "com.perimeter.app",
+    "productName": "Perimeter",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist/**",
+      "!.git/**",
+      "!*.md",
+      "!assets/generate-icon.py",
+      "!assets/build-icon.sh",
+      "!assets/icon.png",
+      "!assets/icon.iconset/**"
+    ],
+    "asar": false,
+    "mac": {
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ]
+    },
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
