@@ -1,0 +1,22 @@
+{
+  "name": "parallel",
+  "version": "1.0.0",
+  "description": "Dual-pane browser for parallel workstreams",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging --dev"
+  },
+  "keywords": [
+    "browser",
+    "electron",
+    "dual-pane",
+    "workspace"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^29.0.0"
+  }
+}
