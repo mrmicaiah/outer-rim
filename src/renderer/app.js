@@ -9,7 +9,6 @@ function uuidv4() {
 // State
 let workspaces = [];
 let activeWorkspace = null;
-let scratchpadContent = '';
 let profiles = [];
 
 // Track which webviews have been created
@@ -62,15 +61,154 @@ async function init() {
   renderWorkspaces();
   renderRightPane();
   updateNotepad();
-  updateWorkspaceInfo();
+  updateSidebar();
   updateEmptyState();
   setupEventListeners();
   
   loadScreenshots();
   
   window.outerRim.screenshots.onNew(() => loadScreenshots());
-  
   window.outerRim.onMenuToggleDevTools(() => toggleActiveWebviewDevTools());
+}
+
+// ============================================
+// SIDEBAR - Workspace & Git Controls
+// ============================================
+
+function updateSidebar() {
+  const nameDisplay = document.getElementById('workspace-name-display');
+  const folderInput = document.getElementById('folder-path-input');
+  const folderStatus = document.getElementById('folder-status');
+  const gitSection = document.getElementById('git-section');
+  
+  if (activeWorkspace) {
+    nameDisplay.textContent = activeWorkspace.name;
+    const folder = activeWorkspace.folderPath || '';
+    folderInput.value = folder || '';
+    folderInput.placeholder = folder ? '' : 'Select a folder...';
+    
+    if (folder) {
+      folderStatus.textContent = '';
+      gitSection.classList.remove('hidden');
+      checkGitStatus();
+    } else {
+      folderStatus.textContent = 'No folder selected';
+      gitSection.classList.add('hidden');
+    }
+  } else {
+    nameDisplay.textContent = 'No workspace';
+    folderInput.value = '';
+    folderInput.placeholder = 'Select a folder...';
+    folderStatus.textContent = '';
+    gitSection.classList.add('hidden');
+  }
+}
+
+async function checkGitStatus() {
+  if (!activeWorkspace?.folderPath) return;
+  
+  const badge = document.getElementById('git-status-badge');
+  const statusDisplay = document.getElementById('git-status-display');
+  const statusText = statusDisplay.querySelector('.git-status-text');
+  
+  badge.textContent = '...';
+  badge.className = 'status-badge';
+  statusText.textContent = 'Checking status...';
+  
+  try {
+    const result = await window.outerRim.git.status(activeWorkspace.folderPath);
+    
+    if (result.success) {
+      if (result.hasChanges) {
+        badge.textContent = `${result.changes.length} changed`;
+        badge.className = 'status-badge changes';
+        
+        const fileList = result.changes.slice(0, 5).map(c => `${c.status} ${c.file}`).join('\n');
+        const more = result.changes.length > 5 ? `\n...and ${result.changes.length - 5} more` : '';
+        statusText.textContent = `${result.changes.length} file(s) changed`;
+        statusText.title = fileList + more;
+      } else {
+        badge.textContent = 'Clean';
+        badge.className = 'status-badge clean';
+        statusText.textContent = 'Working tree clean';
+        statusText.title = '';
+      }
+    } else {
+      badge.textContent = 'Error';
+      badge.className = 'status-badge error';
+      statusText.textContent = result.error || 'Not a git repository';
+    }
+  } catch (err) {
+    badge.textContent = 'Error';
+    badge.className = 'status-badge error';
+    statusText.textContent = err.message;
+  }
+}
+
+async function gitPush() {
+  if (!activeWorkspace?.folderPath) return;
+  
+  const btn = document.getElementById('git-push-btn');
+  const statusText = document.querySelector('#git-status-display .git-status-text');
+  const commitInput = document.getElementById('commit-message');
+  
+  btn.disabled = true;
+  btn.querySelector('.btn-text').textContent = 'Pushing...';
+  statusText.textContent = 'Adding and committing...';
+  
+  try {
+    const message = commitInput.value.trim() || undefined;
+    const result = await window.outerRim.git.push(activeWorkspace.folderPath, message);
+    
+    if (result.success) {
+      statusText.textContent = result.message || '✓ Pushed successfully!';
+      commitInput.value = '';
+      setTimeout(() => checkGitStatus(), 1000);
+    } else {
+      statusText.textContent = '✗ ' + result.error;
+    }
+  } catch (err) {
+    statusText.textContent = '✗ ' + err.message;
+  }
+  
+  btn.disabled = false;
+  btn.querySelector('.btn-text').textContent = 'Push';
+}
+
+async function gitPull() {
+  if (!activeWorkspace?.folderPath) return;
+  
+  const btn = document.getElementById('git-pull-btn');
+  const statusText = document.querySelector('#git-status-display .git-status-text');
+  
+  btn.disabled = true;
+  btn.querySelector('.btn-text').textContent = 'Pulling...';
+  statusText.textContent = 'Pulling from remote...';
+  
+  try {
+    const result = await window.outerRim.git.pull(activeWorkspace.folderPath);
+    
+    if (result.success) {
+      statusText.textContent = result.message || '✓ Pulled successfully!';
+      setTimeout(() => checkGitStatus(), 1000);
+    } else {
+      statusText.textContent = '✗ ' + result.error;
+    }
+  } catch (err) {
+    statusText.textContent = '✗ ' + err.message;
+  }
+  
+  btn.disabled = false;
+  btn.querySelector('.btn-text').textContent = 'Pull';
+}
+
+async function browseFolder() {
+  const folder = await window.outerRim.project.browse();
+  if (folder && activeWorkspace) {
+    activeWorkspace.folderPath = folder;
+    await window.outerRim.workspace.update(activeWorkspace);
+    updateSidebar();
+  }
 }
 
 // ============================================
@@ -124,147 +262,6 @@ function getCurrentProfileId() {
 }
 
 // ============================================
-// WORKSPACE INFO & GIT CONTROLS
-// ============================================
-
-function updateWorkspaceInfo() {
-  const nameDisplay = document.querySelector('.workspace-name-display');
-  const folderDisplay = document.querySelector('.workspace-folder-display');
-  const gitControls = document.getElementById('git-controls');
-  const folderInput = document.getElementById('folder-path-input');
-  
-  if (activeWorkspace) {
-    nameDisplay.textContent = activeWorkspace.name;
-    const folder = activeWorkspace.folderPath || '';
-    folderDisplay.textContent = folder || 'No folder selected';
-    folderInput.value = folder;
-    
-    // Show git controls if folder exists
-    if (folder) {
-      gitControls.classList.remove('hidden');
-      checkGitStatus();
-    } else {
-      gitControls.classList.add('hidden');
-    }
-  } else {
-    nameDisplay.textContent = 'No workspace';
-    folderDisplay.textContent = '';
-    folderInput.value = '';
-    gitControls.classList.add('hidden');
-  }
-}
-
-async function checkGitStatus() {
-  if (!activeWorkspace?.folderPath) return;
-  
-  const indicator = document.getElementById('git-status-indicator');
-  const statusText = document.getElementById('git-status-text');
-  
-  try {
-    const result = await window.outerRim.git.status(activeWorkspace.folderPath);
-    if (result.success) {
-      if (result.hasChanges) {
-        indicator.textContent = '●';
-        indicator.style.color = '#f59e0b';
-        indicator.title = `${result.changes.length} changed files`;
-        statusText.textContent = `${result.changes.length} file(s) changed`;
-      } else {
-        indicator.textContent = '✓';
-        indicator.style.color = '#22c55e';
-        indicator.title = 'Clean';
-        statusText.textContent = 'Clean - no changes';
-      }
-    } else {
-      indicator.textContent = '?';
-      indicator.style.color = '#6b7280';
-      indicator.title = result.error || 'Not a git repo';
-      statusText.textContent = result.error || 'Not a git repository';
-    }
-  } catch (err) {
-    indicator.textContent = '!';
-    indicator.style.color = '#ef4444';
-    statusText.textContent = err.message;
-  }
-}
-
-async function gitPush() {
-  if (!activeWorkspace?.folderPath) return;
-  
-  const btn = document.getElementById('git-push-btn');
-  const statusText = document.getElementById('git-status-text');
-  const commitInput = document.getElementById('commit-message');
-  
-  btn.disabled = true;
-  btn.textContent = 'Pushing...';
-  statusText.textContent = 'Pushing to remote...';
-  
-  try {
-    const message = commitInput.value.trim() || undefined;
-    const result = await window.outerRim.git.push(activeWorkspace.folderPath, message);
-    
-    if (result.success) {
-      statusText.textContent = result.message || 'Pushed successfully';
-      commitInput.value = '';
-      checkGitStatus();
-    } else {
-      statusText.textContent = 'Error: ' + result.error;
-    }
-  } catch (err) {
-    statusText.textContent = 'Error: ' + err.message;
-  }
-  
-  btn.disabled = false;
-  btn.textContent = '⬆ Push';
-}
-
-async function gitPull() {
-  if (!activeWorkspace?.folderPath) return;
-  
-  const btn = document.getElementById('git-pull-btn');
-  const statusText = document.getElementById('git-status-text');
-  
-  btn.disabled = true;
-  btn.textContent = 'Pulling...';
-  statusText.textContent = 'Pulling from remote...';
-  
-  try {
-    const result = await window.outerRim.git.pull(activeWorkspace.folderPath);
-    
-    if (result.success) {
-      statusText.textContent = result.message || 'Pulled successfully';
-      checkGitStatus();
-    } else {
-      statusText.textContent = 'Error: ' + result.error;
-    }
-  } catch (err) {
-    statusText.textContent = 'Error: ' + err.message;
-  }
-  
-  btn.disabled = false;
-  btn.textContent = '⬇ Pull';
-}
-
-async function browseFolder() {
-  const folder = await window.outerRim.project.browse();
-  if (folder && activeWorkspace) {
-    activeWorkspace.folderPath = folder;
-    await window.outerRim.workspace.update(activeWorkspace);
-    updateWorkspaceInfo();
-  }
-}
-
-async function updateFolderPath() {
-  const input = document.getElementById('folder-path-input');
-  const path = input.value.trim();
-  
-  if (activeWorkspace) {
-    activeWorkspace.folderPath = path;
-    await window.outerRim.workspace.update(activeWorkspace);
-    updateWorkspaceInfo();
-  }
-}
-
-// ============================================
 // PROFILE MANAGEMENT
 // ============================================
 
@@ -291,12 +288,9 @@ function renderProfileList() {
   const list = document.getElementById('profile-list');
   list.innerHTML = profiles.map(p => `
     <div class="profile-item" data-id="${p.id}">
-      <div>
-        <span class="profile-item-name">${escapeHtml(p.name)}</span>
-        ${p.id === 'default' ? '<span class="profile-item-default">(cannot delete)</span>' : ''}
-      </div>
+      <span class="profile-item-name">${escapeHtml(p.name)}</span>
       <div class="profile-item-actions">
-        ${p.id !== 'default' ? `<button class="delete" title="Delete">🗑️</button>` : ''}
+        ${p.id !== 'default' ? `<button class="delete" title="Delete">🗑</button>` : ''}
       </div>
     </div>
   `).join('');
@@ -359,7 +353,7 @@ function getPartitionForProfile(profileId) {
 function startResize(type, e, extras = {}) {
   currentResizer = { type, startX: e.clientX, startY: e.clientY, ...extras };
   resizeOverlay.style.display = 'block';
-  document.body.style.cursor = type === 'bottom' ? 'row-resize' : 'col-resize';
+  document.body.style.cursor = 'col-resize';
   document.body.style.userSelect = 'none';
 }
 
@@ -550,7 +544,7 @@ async function createWorkspace(name) {
   renderWorkspaces();
   renderRightPane();
   updateNotepad();
-  updateWorkspaceInfo();
+  updateSidebar();
   updateEmptyState();
 }
 
@@ -567,7 +561,7 @@ async function switchWorkspace(workspaceId) {
   renderWorkspaces();
   renderRightPane();
   updateNotepad();
-  updateWorkspaceInfo();
+  updateSidebar();
 }
 
 async function deleteWorkspace(workspaceId) {
@@ -584,7 +578,7 @@ async function deleteWorkspace(workspaceId) {
   renderWorkspaces();
   renderRightPane();
   updateNotepad();
-  updateWorkspaceInfo();
+  updateSidebar();
   updateEmptyState();
 }
 
@@ -594,7 +588,7 @@ async function renameWorkspace(workspaceId, newName) {
     workspace.name = newName;
     await window.outerRim.workspace.update(workspace);
     renderWorkspaces();
-    updateWorkspaceInfo();
+    updateSidebar();
   }
 }
 
@@ -631,7 +625,6 @@ function renderRightPane() {
   
   Object.entries(pane.profiles || {}).forEach(([profileId, profileData]) => {
     const partition = getPartitionForProfile(profileId);
-    const profile = profiles.find(p => p.id === profileId);
     const isActiveProfile = profileId === activeProfileId;
     
     profileData.tabs.forEach(tab => {
@@ -904,7 +897,7 @@ async function loadScreenshots() {
     const screenshots = await window.outerRim.screenshots.list();
     renderScreenshots(screenshots);
   } catch (err) {
-    list.innerHTML = `<div class="screenshots-empty">Error: ${err.message}</div>`;
+    list.innerHTML = `<div class="screenshots-empty">Error</div>`;
   }
 }
 
@@ -917,10 +910,10 @@ function renderScreenshots(screenshots) {
     return;
   }
   
-  screenshots.slice(0, 10).forEach(screenshot => {
+  screenshots.slice(0, 9).forEach(screenshot => {
     const item = document.createElement('div');
     item.className = 'screenshot-item';
-    item.innerHTML = `<img src="file://${screenshot.path}" alt="${escapeHtml(screenshot.name)}" loading="lazy">`;
+    item.innerHTML = `<img src="file://${screenshot.path}" alt="" loading="lazy">`;
     item.addEventListener('click', () => openScreenshotPreview(screenshot.path));
     list.appendChild(item);
   });
@@ -1048,9 +1041,7 @@ function setupEventListeners() {
   document.addEventListener('mouseup', stopResize);
   
   // DevTools button
-  document.getElementById('devtools-btn').addEventListener('click', () => {
-    toggleActiveWebviewDevTools();
-  });
+  document.getElementById('devtools-btn').addEventListener('click', toggleActiveWebviewDevTools);
   
   // Workspace buttons
   document.getElementById('add-workspace').addEventListener('click', openCreateWorkspaceModal);
@@ -1058,11 +1049,12 @@ function setupEventListeners() {
   
   // Folder selector
   document.getElementById('folder-browse-btn').addEventListener('click', browseFolder);
-  document.getElementById('folder-path-input').addEventListener('change', updateFolderPath);
+  document.getElementById('folder-path-input').addEventListener('click', browseFolder);
   
   // Git buttons
   document.getElementById('git-push-btn').addEventListener('click', gitPush);
   document.getElementById('git-pull-btn').addEventListener('click', gitPull);
+  document.getElementById('git-refresh-btn').addEventListener('click', checkGitStatus);
   
   // Tab management
   document.querySelector('.pane-add-tab[data-pane="right"]').addEventListener('click', openTabModal);
