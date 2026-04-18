@@ -399,8 +399,28 @@ function toggleActiveWebviewDevTools() {
   
   const webview = document.getElementById(`webview-right-${profileId}-${paneData.activeTabId}`);
   if (webview) {
-    webview.isDevToolsOpened() ? webview.closeDevTools() : webview.openDevTools();
+    if (webview.isDevToolsOpened()) {
+      webview.closeDevTools();
+    } else {
+      webview.openDevTools();
+    }
   }
+}
+
+// Force webview to repaint after DevTools closes
+function setupWebviewDevToolsHandler(webview) {
+  webview.addEventListener('devtools-closed', () => {
+    // Force a repaint by briefly adjusting styles
+    const container = webview.parentElement;
+    if (container && webview.classList.contains('active')) {
+      // Hide, force reflow, then show again
+      webview.style.visibility = 'hidden';
+      void webview.offsetHeight; // Force reflow
+      requestAnimationFrame(() => {
+        webview.style.visibility = 'visible';
+      });
+    }
+  });
 }
 
 function setupWebviewContextMenu(webview) {
@@ -436,20 +456,20 @@ function showContextMenu(x, y, items) {
   
   const menu = document.createElement('div');
   menu.id = 'context-menu';
-  menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;background:#fff;border:2px solid #000;padding:4px 0;min-width:180px;z-index:10000;box-shadow:4px 4px 0 rgba(0,0,0,0.1);`;
+  menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;background:var(--light-bg);border:1px solid var(--light-border);border-radius:8px;padding:4px 0;min-width:180px;z-index:10000;box-shadow:0 8px 24px rgba(0,0,0,0.15);`;
   
   items.forEach(item => {
     if (item.type === 'separator') {
       const sep = document.createElement('div');
-      sep.style.cssText = 'height:2px;background:#000;margin:4px 0;';
+      sep.style.cssText = 'height:1px;background:var(--light-border);margin:4px 0;';
       menu.appendChild(sep);
     } else {
       const btn = document.createElement('button');
       btn.textContent = item.label;
       btn.disabled = item.disabled;
-      btn.style.cssText = `display:block;width:100%;padding:10px 16px;background:none;border:none;color:${item.disabled ? '#999' : '#000'};font-size:13px;font-weight:500;text-align:left;cursor:${item.disabled ? 'default' : 'pointer'};`;
+      btn.style.cssText = `display:block;width:100%;padding:10px 16px;background:none;border:none;color:${item.disabled ? '#999' : 'var(--light-text)'};font-size:13px;font-weight:500;text-align:left;cursor:${item.disabled ? 'default' : 'pointer'};`;
       if (!item.disabled) {
-        btn.addEventListener('mouseenter', () => btn.style.background = '#f0f0f0');
+        btn.addEventListener('mouseenter', () => btn.style.background = 'var(--light-bg-secondary)');
         btn.addEventListener('mouseleave', () => btn.style.background = 'none');
         btn.addEventListener('click', () => { item.action(); menu.remove(); });
       }
@@ -660,7 +680,10 @@ function renderRightPane() {
         webview.setAttribute('partition', partition);
         webview.setAttribute('allowpopups', 'true');
         
-        webview.addEventListener('dom-ready', () => setupWebviewContextMenu(webview));
+        webview.addEventListener('dom-ready', () => {
+          setupWebviewContextMenu(webview);
+          setupWebviewDevToolsHandler(webview);
+        });
         webview.addEventListener('page-title-updated', (e) => updateTabTitle(tab.id, e.title, profileId));
         webview.addEventListener('did-navigate', (e) => {
           updateTabUrl(tab.id, e.url, profileId);
