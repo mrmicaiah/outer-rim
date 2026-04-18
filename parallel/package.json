@@ -5,7 +5,10 @@
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --enable-logging --dev"
+    "dev": "electron . --enable-logging --dev",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:all": "electron-builder --mac --win"
   },
   "keywords": [
     "browser",
@@ -13,10 +16,35 @@
     "dual-pane",
     "workspace"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "Micaiah",
+  "license": "MIT",
   "dependencies": {},
   "devDependencies": {
-    "electron": "^29.0.0"
+    "electron": "^29.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.parallel.app",
+    "productName": "Parallel",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist/**",
+      "!.git/**",
+      "!*.md"
+    ],
+    "asar": false,
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ]
+    },
+    "win": {
+      "target": "nsis"
+    }
   }
 }
