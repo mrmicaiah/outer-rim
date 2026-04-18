@@ -65,9 +65,6 @@ async function init() {
   updateEmptyState();
   setupEventListeners();
   
-  loadScreenshots();
-  
-  window.outerRim.screenshots.onNew(() => loadScreenshots());
   window.outerRim.onMenuToggleDevTools(() => toggleActiveWebviewDevTools());
 }
 
@@ -439,20 +436,20 @@ function showContextMenu(x, y, items) {
   
   const menu = document.createElement('div');
   menu.id = 'context-menu';
-  menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:4px 0;min-width:180px;z-index:10000;box-shadow:0 8px 32px rgba(0,0,0,0.4);`;
+  menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;background:#fff;border:2px solid #000;padding:4px 0;min-width:180px;z-index:10000;box-shadow:4px 4px 0 rgba(0,0,0,0.1);`;
   
   items.forEach(item => {
     if (item.type === 'separator') {
       const sep = document.createElement('div');
-      sep.style.cssText = 'height:1px;background:var(--border-color);margin:4px 0;';
+      sep.style.cssText = 'height:2px;background:#000;margin:4px 0;';
       menu.appendChild(sep);
     } else {
       const btn = document.createElement('button');
       btn.textContent = item.label;
       btn.disabled = item.disabled;
-      btn.style.cssText = `display:block;width:100%;padding:8px 16px;background:none;border:none;color:${item.disabled ? 'var(--text-muted)' : 'var(--text-primary)'};font-size:13px;text-align:left;cursor:${item.disabled ? 'default' : 'pointer'};`;
+      btn.style.cssText = `display:block;width:100%;padding:10px 16px;background:none;border:none;color:${item.disabled ? '#999' : '#000'};font-size:13px;font-weight:500;text-align:left;cursor:${item.disabled ? 'default' : 'pointer'};`;
       if (!item.disabled) {
-        btn.addEventListener('mouseenter', () => btn.style.background = 'var(--bg-hover)');
+        btn.addEventListener('mouseenter', () => btn.style.background = '#f0f0f0');
         btn.addEventListener('mouseleave', () => btn.style.background = 'none');
         btn.addEventListener('click', () => { item.action(); menu.remove(); });
       }
@@ -640,7 +637,7 @@ function renderRightPane() {
         const displayTitle = simplifyTitle(tab.title, tab.url);
         
         item.innerHTML = `
-          <img class="pane-tab-favicon" src="${favicon}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><rect fill=%22%23666%22 width=%2216%22 height=%2216%22 rx=%222%22/></svg>'">
+          <img class="pane-tab-favicon" src="${favicon}" onerror="this.style.display='none'">
           <span class="pane-tab-title" title="${escapeHtml(tab.title || '')}">${escapeHtml(displayTitle)}</span>
           <button class="pane-tab-close" title="Close tab">×</button>
         `;
@@ -886,76 +883,6 @@ function expandNotepad() {
 }
 
 // ============================================
-// SCREENSHOTS PANEL
-// ============================================
-
-async function loadScreenshots() {
-  const list = document.getElementById('screenshots-list');
-  list.innerHTML = '<div class="screenshots-empty">Loading...</div>';
-  
-  try {
-    const screenshots = await window.outerRim.screenshots.list();
-    renderScreenshots(screenshots);
-  } catch (err) {
-    list.innerHTML = `<div class="screenshots-empty">Error</div>`;
-  }
-}
-
-function renderScreenshots(screenshots) {
-  const list = document.getElementById('screenshots-list');
-  list.innerHTML = '';
-  
-  if (screenshots.length === 0) {
-    list.innerHTML = '<div class="screenshots-empty">No screenshots</div>';
-    return;
-  }
-  
-  screenshots.slice(0, 9).forEach(screenshot => {
-    const item = document.createElement('div');
-    item.className = 'screenshot-item';
-    item.innerHTML = `<img src="file://${screenshot.path}" alt="" loading="lazy">`;
-    item.addEventListener('click', () => openScreenshotPreview(screenshot.path));
-    list.appendChild(item);
-  });
-}
-
-function openScreenshotPreview(filepath) {
-  const overlay = document.getElementById('screenshot-preview-overlay');
-  const img = document.getElementById('screenshot-preview-img');
-  img.src = `file://${filepath}`;
-  img.dataset.path = filepath;
-  overlay.classList.remove('hidden');
-}
-
-function closeScreenshotPreview() {
-  document.getElementById('screenshot-preview-overlay').classList.add('hidden');
-}
-
-async function copyScreenshotToClipboard() {
-  const img = document.getElementById('screenshot-preview-img');
-  const success = await window.outerRim.screenshots.copy(img.dataset.path);
-  if (success) {
-    const btn = document.getElementById('screenshot-copy');
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = 'Copy to Clipboard'; }, 1500);
-  }
-}
-
-async function deleteCurrentScreenshot() {
-  const img = document.getElementById('screenshot-preview-img');
-  if (!confirm('Delete this screenshot?')) return;
-  if (await window.outerRim.screenshots.delete(img.dataset.path)) {
-    closeScreenshotPreview();
-    loadScreenshots();
-  }
-}
-
-async function deleteAllScreenshots() {
-  if (!confirm('Delete ALL screenshots?')) return;
-  if (await window.outerRim.screenshots.deleteAll()) loadScreenshots();
-}
-
-// ============================================
 // UI HELPERS
 // ============================================
 
@@ -967,7 +894,7 @@ function getFaviconUrl(url) {
   try {
     return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=32`;
   } catch {
-    return 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect fill="%23666" width="16" height="16" rx="2"/></svg>';
+    return '';
   }
 }
 
@@ -1079,14 +1006,6 @@ function setupEventListeners() {
     if (e.key === 'Enter') { navigateToUrl(e.target.value.trim()); e.target.blur(); }
   });
   
-  // Screenshots
-  document.getElementById('screenshots-refresh').addEventListener('click', loadScreenshots);
-  document.getElementById('screenshots-delete-all').addEventListener('click', deleteAllScreenshots);
-  document.getElementById('screenshot-preview-overlay').addEventListener('click', (e) => { if (e.target.id === 'screenshot-preview-overlay') closeScreenshotPreview(); });
-  document.getElementById('screenshot-copy').addEventListener('click', copyScreenshotToClipboard);
-  document.getElementById('screenshot-delete').addEventListener('click', deleteCurrentScreenshot);
-  document.getElementById('screenshot-close').addEventListener('click', closeScreenshotPreview);
-  
   // Notepad
   notepadContent.addEventListener('input', saveNotes);
   notepadToggle.addEventListener('click', toggleNotepad);
@@ -1123,7 +1042,7 @@ function setupEventListeners() {
     if ((e.metaKey || e.ctrlKey) && e.key === 'r') { e.preventDefault(); refreshActiveTab(); }
     if ((e.metaKey || e.ctrlKey) && e.key === 'l') { e.preventDefault(); const nav = document.querySelector('.nav-url[data-pane="right"]'); nav?.focus(); nav?.select(); }
     if (e.key === 'F12') { e.preventDefault(); toggleActiveWebviewDevTools(); }
-    if (e.key === 'Escape') { closeWorkspaceModal(); closeTabModal(); closeProfileModal(); closeScreenshotPreview(); }
+    if (e.key === 'Escape') { closeWorkspaceModal(); closeTabModal(); closeProfileModal(); }
   });
 }
 
