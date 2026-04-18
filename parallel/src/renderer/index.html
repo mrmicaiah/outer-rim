@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parallel</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Title Bar -->
+    <div id="title-bar">
+      <div class="title-bar-drag-region"></div>
+      <span class="title-bar-text">Parallel</span>
+    </div>
+
+    <!-- Main Content -->
+    <div id="main-content">
+      <div id="upper-section">
+        <!-- Dual Pane Container -->
+        <div id="dual-pane-container">
+
+          <!-- LEFT PANE: Browser -->
+          <div id="left-pane" class="browser-pane" data-pane="left">
+            <div class="pane-tab-bar">
+              <div class="pane-tab-list" data-pane="left"></div>
+              <button class="pane-add-tab" data-pane="left" title="New Tab">+</button>
+              <div class="pane-profile-selector">
+                <select class="profile-select" data-pane="left" title="Session Profile">
+                  <option value="default">Default</option>
+                </select>
+                <button class="profile-manage-btn" data-pane="left" title="Manage Profiles">⚙</button>
+              </div>
+            </div>
+            <div class="pane-nav-bar hidden" data-pane="left">
+              <button class="nav-btn nav-back" data-pane="left" title="Back">◀</button>
+              <button class="nav-btn nav-forward" data-pane="left" title="Forward">▶</button>
+              <button class="nav-btn nav-refresh" data-pane="left" title="Refresh">↻</button>
+              <input type="text" class="nav-url" data-pane="left" placeholder="Enter URL or search...">
+            </div>
+            <div class="pane-webview-container" data-pane="left">
+              <div class="pane-empty-state">
+                <p>Click + to open a tab</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pane Resizer -->
+          <div id="pane-resizer"></div>
+
+          <!-- RIGHT PANE: Browser -->
+          <div id="right-pane" class="browser-pane" data-pane="right">
+            <div class="pane-tab-bar">
+              <div class="pane-tab-list" data-pane="right"></div>
+              <button class="pane-add-tab" data-pane="right" title="New Tab">+</button>
+              <div class="pane-profile-selector">
+                <select class="profile-select" data-pane="right" title="Session Profile">
+                  <option value="default">Default</option>
+                </select>
+                <button class="profile-manage-btn" data-pane="right" title="Manage Profiles">⚙</button>
+              </div>
+            </div>
+            <div class="pane-nav-bar hidden" data-pane="right">
+              <button class="nav-btn nav-back" data-pane="right" title="Back">◀</button>
+              <button class="nav-btn nav-forward" data-pane="right" title="Forward">▶</button>
+              <button class="nav-btn nav-refresh" data-pane="right" title="Refresh">↻</button>
+              <input type="text" class="nav-url" data-pane="right" placeholder="Enter URL or search...">
+            </div>
+            <div class="pane-webview-container" data-pane="right">
+              <div class="pane-empty-state">
+                <p>Click + to open a tab</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Notepad Resizer -->
+          <div id="notepad-resizer"></div>
+
+          <!-- Notepad Panel -->
+          <div id="notepad-panel">
+            <div class="notepad-header">
+              <span class="notepad-title">📝 Notes</span>
+              <button id="notepad-toggle" title="Collapse">◀</button>
+            </div>
+            <textarea id="notepad-content" placeholder="Workspace notes..."></textarea>
+          </div>
+
+          <!-- Notepad Expand Button (when collapsed) -->
+          <button id="notepad-expand" class="hidden" title="Expand Notes">📝</button>
+        </div>
+      </div>
+
+      <!-- Workspace Bar -->
+      <div id="workspace-bar">
+        <div id="workspace-list"></div>
+        <button id="add-workspace" class="workspace-add-btn">+ New Workspace</button>
+      </div>
+    </div>
+
+    <!-- Empty State Overlay -->
+    <div id="empty-state-overlay" class="hidden">
+      <div class="empty-icon">⊞</div>
+      <h2>Welcome to Parallel</h2>
+      <p>Create a workspace to get started</p>
+      <button id="empty-create-workspace">Create Workspace</button>
+    </div>
+
+    <!-- Workspace Modal -->
+    <div id="modal-overlay" class="hidden">
+      <div id="modal">
+        <h3 id="modal-title">New Workspace</h3>
+        <input type="text" id="workspace-name-input" placeholder="Workspace name">
+        <div class="modal-actions">
+          <button id="modal-cancel" class="btn-secondary">Cancel</button>
+          <button id="modal-confirm" class="btn-primary">Create</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab Modal -->
+    <div id="tab-modal-overlay" class="hidden">
+      <div id="tab-modal">
+        <h3 id="tab-modal-title">New Tab</h3>
+        <input type="text" id="tab-url-input" placeholder="Enter URL or search term">
+        <div class="quick-links">
+          <button class="quick-link" data-url="https://claude.ai">Claude</button>
+          <button class="quick-link" data-url="https://github.com">GitHub</button>
+          <button class="quick-link" data-url="https://google.com">Google</button>
+          <button class="quick-link" data-url="https://chat.openai.com">ChatGPT</button>
+        </div>
+        <div class="modal-actions">
+          <button id="tab-modal-cancel" class="btn-secondary">Cancel</button>
+          <button id="tab-modal-confirm" class="btn-primary">Open</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Profile Modal -->
+    <div id="profile-modal-overlay" class="hidden">
+      <div id="profile-modal">
+        <h3>Manage Session Profiles</h3>
+        <p class="profile-modal-desc">Each profile has isolated cookies/sessions. Profiles are shared across both panes, but each pane can use a different profile.</p>
+        <div id="profile-list"></div>
+        <div class="profile-add-row">
+          <input type="text" id="new-profile-input" placeholder="New profile name...">
+          <button id="add-profile-btn" class="btn-primary">Add</button>
+        </div>
+        <div class="modal-actions">
+          <button id="profile-modal-close" class="btn-secondary">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
