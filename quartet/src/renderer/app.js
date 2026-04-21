@@ -1,5 +1,6 @@
 // ============================================
 // QUARTET - Four-Pane Browser for Parallel Workstreams
+// with Git sidebar (left) + Notepad (right)
 // ============================================
 
 function uuidv4() {
@@ -10,7 +11,7 @@ function uuidv4() {
 let workspaces = [];
 let activeWorkspace = null;
 let profiles = [];
-let focusedPane = 'topLeft'; // routes keyboard shortcuts
+let focusedPane = 'topLeft';
 
 // Track which webviews have been created
 const createdWebviews = new Set();
@@ -19,9 +20,18 @@ const createdWebviews = new Set();
 let currentResizer = null;
 let resizeOverlay = null;
 
-// DOM Elements
+// DOM Elements — main
 const workspaceList = document.getElementById('workspace-list');
+const notepadContent = document.getElementById('notepad-content');
 const emptyStateOverlay = document.getElementById('empty-state-overlay');
+const notepadPanel = document.getElementById('notepad-panel');
+const notepadExpand = document.getElementById('notepad-expand');
+const notepadToggle = document.getElementById('notepad-toggle');
+
+// Sidebar elements
+const sidebar = document.getElementById('sidebar');
+const sidebarExpand = document.getElementById('sidebar-expand');
+const sidebarToggle = document.getElementById('sidebar-toggle');
 
 // Modals
 const modalOverlay = document.getElementById('modal-overlay');
@@ -35,7 +45,6 @@ let pendingTabPaneId = 'topLeft';
 
 const PANES = ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'];
 
-// Human-readable pane labels for menus and modal titles
 const PANE_LABELS = {
   topLeft: 'Top Left',
   topRight: 'Top Right',
@@ -70,11 +79,12 @@ async function init() {
 
   renderWorkspaces();
   PANES.forEach(p => renderPane(p));
+  updateNotepad();
+  updateSidebar();
   updateEmptyState();
   setFocusedPane('topLeft');
   setupEventListeners();
 
-  // Menu sends (event, pane) — pane may be one of the PANES names, or null (= focused)
   window.quartet.onMenuToggleDevTools((event, pane) => {
     toggleWebviewDevTools(pane || focusedPane);
   });
@@ -92,7 +102,6 @@ function emptyPaneShape() {
 }
 
 function migrateWorkspaceStructure(workspace) {
-  // Fresh workspace with no panes at all
   if (!workspace.panes) {
     workspace.panes = {
       topLeft: emptyPaneShape(),
@@ -114,13 +123,11 @@ function migrateWorkspaceStructure(workspace) {
     delete workspace.panes.right;
   }
 
-  // Ensure all four keys exist
   PANES.forEach(paneId => {
     if (!workspace.panes[paneId]) {
       workspace.panes[paneId] = emptyPaneShape();
     }
     const pane = workspace.panes[paneId];
-    // Older shape with pane.tabs at the root — wrap in profiles
     if (!pane.profiles) {
       const oldProfileId = pane.profileId || 'default';
       workspace.panes[paneId] = {
@@ -169,6 +176,152 @@ function setFocusedPane(paneId) {
     const el = document.getElementById(`${p}-pane`);
     if (el) el.classList.toggle('focused', p === paneId);
   });
+}
+
+// ============================================
+// SIDEBAR - Workspace display, Folder, Git
+// ============================================
+
+function updateSidebar() {
+  const nameDisplay = document.getElementById('workspace-name-display');
+  const folderInput = document.getElementById('folder-path-input');
+  const folderStatus = document.getElementById('folder-status');
+  const gitSection = document.getElementById('git-section');
+
+  if (activeWorkspace) {
+    nameDisplay.textContent = activeWorkspace.name;
+    const folder = activeWorkspace.folderPath || '';
+    folderInput.value = folder || '';
+    folderInput.placeholder = folder ? '' : 'Select a folder...';
+
+    if (folder) {
+      folderStatus.textContent = '';
+      gitSection.classList.remove('hidden');
+      checkGitStatus();
+    } else {
+      folderStatus.textContent = 'No folder selected';
+      gitSection.classList.add('hidden');
+    }
+  } else {
+    nameDisplay.textContent = 'No workspace';
+    folderInput.value = '';
+    folderInput.placeholder = 'Select a folder...';
+    folderStatus.textContent = '';
+    gitSection.classList.add('hidden');
+  }
+}
+
+async function checkGitStatus() {
+  if (!activeWorkspace?.folderPath) return;
+
+  const badge = document.getElementById('git-status-badge');
+  const statusDisplay = document.getElementById('git-status-display');
+  const statusText = statusDisplay.querySelector('.git-status-text');
+
+  badge.textContent = '...';
+  badge.className = 'status-badge';
+  statusText.textContent = 'Checking status...';
+
+  try {
+    const result = await window.quartet.git.status(activeWorkspace.folderPath);
+    if (result.success) {
+      if (result.hasChanges) {
+        badge.textContent = `${result.changes.length} changed`;
+        badge.className = 'status-badge changes';
+        const fileList = result.changes.slice(0, 5).map(c => `${c.status} ${c.file}`).join('\n');
+        const more = result.changes.length > 5 ? `\n...and ${result.changes.length - 5} more` : '';
+        statusText.textContent = `${result.changes.length} file(s) changed`;
+        statusText.title = fileList + more;
+      } else {
+        badge.textContent = 'Clean';
+        badge.className = 'status-badge clean';
+        statusText.textContent = 'Working tree clean';
+        statusText.title = '';
+      }
+    } else {
+      badge.textContent = 'Error';
+      badge.className = 'status-badge error';
+      statusText.textContent = result.error || 'Not a git repository';
+    }
+  } catch (err) {
+    badge.textContent = 'Error';
+    badge.className = 'status-badge error';
+    statusText.textContent = err.message;
+  }
+}
+
+async function gitPush() {
+  if (!activeWorkspace?.folderPath) return;
+
+  const btn = document.getElementById('git-push-btn');
+  const statusText = document.querySelector('#git-status-display .git-status-text');
+  const commitInput = document.getElementById('commit-message');
+
+  btn.disabled = true;
+  btn.querySelector('.btn-text').textContent = 'Pushing...';
+  statusText.textContent = 'Adding and committing...';
+
+  try {
+    const message = commitInput.value.trim() || undefined;
+    const result = await window.quartet.git.push(activeWorkspace.folderPath, message);
+    if (result.success) {
+      statusText.textContent = result.message || '✓ Pushed successfully!';
+      commitInput.value = '';
+      setTimeout(() => checkGitStatus(), 1000);
+    } else {
+      statusText.textContent = '✗ ' + result.error;
+    }
+  } catch (err) {
+    statusText.textContent = '✗ ' + err.message;
+  }
+
+  btn.disabled = false;
+  btn.querySelector('.btn-text').textContent = 'Push';
+}
+
+async function gitPull() {
+  if (!activeWorkspace?.folderPath) return;
+
+  const btn = document.getElementById('git-pull-btn');
+  const statusText = document.querySelector('#git-status-display .git-status-text');
+
+  btn.disabled = true;
+  btn.querySelector('.btn-text').textContent = 'Pulling...';
+  statusText.textContent = 'Pulling from remote...';
+
+  try {
+    const result = await window.quartet.git.pull(activeWorkspace.folderPath);
+    if (result.success) {
+      statusText.textContent = result.message || '✓ Pulled successfully!';
+      setTimeout(() => checkGitStatus(), 1000);
+    } else {
+      statusText.textContent = '✗ ' + result.error;
+    }
+  } catch (err) {
+    statusText.textContent = '✗ ' + err.message;
+  }
+
+  btn.disabled = false;
+  btn.querySelector('.btn-text').textContent = 'Pull';
+}
+
+async function browseFolder() {
+  const folder = await window.quartet.project.browse();
+  if (folder && activeWorkspace) {
+    activeWorkspace.folderPath = folder;
+    await window.quartet.workspace.update(activeWorkspace);
+    updateSidebar();
+  }
+}
+
+function toggleSidebar() {
+  const isCollapsed = sidebar.classList.toggle('collapsed');
+  sidebarExpand.classList.toggle('hidden', !isCollapsed);
+}
+
+function expandSidebar() {
+  sidebar.classList.remove('collapsed');
+  sidebarExpand.classList.add('hidden');
 }
 
 // ============================================
@@ -263,14 +416,6 @@ function getPartitionForProfile(profileId) {
 // ============================================
 // RESIZERS
 // ============================================
-//
-// Quartet has:
-//   - ONE vertical split shared between top and bottom rows (the two resizers
-//     on screen are slaved to each other)
-//   - ONE horizontal split between the top and bottom rows
-//
-// We store the vertical split as a ratio (0-1 of container width) and apply
-// it to both rows so they always match widths.
 
 function startResize(type, e, extras = {}) {
   currentResizer = { type, startX: e.clientX, startY: e.clientY, ...extras };
@@ -289,7 +434,7 @@ function stopResize() {
 function handleMouseMove(e) {
   if (!currentResizer) return;
 
-  const { type, startX, startY, startTopLeftWidth, startTopRightWidth, startTopRowHeight, startBottomRowHeight } = currentResizer;
+  const { type, startX, startY, startTopLeftWidth, startTopRightWidth, startTopRowHeight, startBottomRowHeight, startWidth } = currentResizer;
 
   if (type === 'vertical') {
     const topLeft = document.getElementById('topLeft-pane');
@@ -301,7 +446,7 @@ function handleMouseMove(e) {
     const newRight = startTopRightWidth - delta;
 
     if (newLeft >= 250 && newRight >= 250) {
-      // Mirror the widths to both rows so top and bottom stay aligned
+      // Mirror widths across both rows
       for (const el of [topLeft, bottomLeft]) {
         el.style.width = newLeft + 'px';
         el.style.flex = 'none';
@@ -323,6 +468,12 @@ function handleMouseMove(e) {
       topRow.style.flex = 'none';
       bottomRow.style.height = newBottom + 'px';
       bottomRow.style.flex = 'none';
+    }
+  } else if (type === 'notepad') {
+    const delta = startX - e.clientX;
+    const newWidth = startWidth + delta;
+    if (newWidth >= 150 && newWidth <= 500) {
+      notepadPanel.style.width = newWidth + 'px';
     }
   }
 }
@@ -347,7 +498,6 @@ function toggleWebviewDevTools(paneId) {
   }
 }
 
-// Force webview to repaint after DevTools closes
 function setupWebviewDevToolsHandler(webview) {
   webview.addEventListener('devtools-closed', () => {
     if (webview.classList.contains('active')) {
@@ -368,7 +518,6 @@ function setupWebviewContextMenu(webview, paneId) {
 
     if (params.linkURL) {
       menuItems.push({ label: 'Open Link in New Tab', action: () => createTab(paneId, params.linkURL) });
-      // "Open in other pane" for each of the three other panes
       PANES.forEach(otherPane => {
         if (otherPane === paneId) return;
         menuItems.push({
@@ -489,7 +638,6 @@ function renderWorkspaces() {
 }
 
 async function createWorkspace(name) {
-  // Default: one claude.ai tab in top-right, the other three blank
   const claudeTab = { id: uuidv4(), url: 'https://claude.ai', title: 'Loading...', createdAt: new Date().toISOString() };
 
   const workspace = {
@@ -505,6 +653,7 @@ async function createWorkspace(name) {
       bottomRight: emptyPaneShape(),
     },
     notes: '',
+    folderPath: '',
     createdAt: new Date().toISOString()
   };
 
@@ -515,11 +664,12 @@ async function createWorkspace(name) {
   updateProfileSelectors();
   renderWorkspaces();
   PANES.forEach(p => renderPane(p));
+  updateNotepad();
+  updateSidebar();
   updateEmptyState();
 }
 
 async function switchWorkspace(workspaceId) {
-  // Clear all webviews
   document.querySelectorAll('.pane-webview-container webview').forEach(wv => wv.remove());
   createdWebviews.clear();
 
@@ -531,6 +681,8 @@ async function switchWorkspace(workspaceId) {
   updateProfileSelectors();
   renderWorkspaces();
   PANES.forEach(p => renderPane(p));
+  updateNotepad();
+  updateSidebar();
 }
 
 async function deleteWorkspace(workspaceId) {
@@ -548,6 +700,8 @@ async function deleteWorkspace(workspaceId) {
   updateProfileSelectors();
   renderWorkspaces();
   PANES.forEach(p => renderPane(p));
+  updateNotepad();
+  updateSidebar();
   updateEmptyState();
 }
 
@@ -557,6 +711,7 @@ async function renameWorkspace(workspaceId, newName) {
     workspace.name = newName;
     await window.quartet.workspace.update(workspace);
     renderWorkspaces();
+    updateSidebar();
   }
 }
 
@@ -589,7 +744,6 @@ function renderPane(paneId) {
   emptyState.style.display = hasTabs ? 'none' : 'block';
   navBar.classList.toggle('hidden', !hasTabs);
 
-  // Deactivate all webviews in this pane
   webviewContainer.querySelectorAll('webview').forEach(wv => wv.classList.remove('active'));
 
   Object.entries(pane.profiles || {}).forEach(([profileId, profileData]) => {
@@ -838,6 +992,42 @@ async function changeProfile(paneId, profileId) {
 }
 
 // ============================================
+// NOTEPAD MANAGEMENT
+// ============================================
+
+function updateNotepad() {
+  if (activeWorkspace) {
+    notepadContent.value = activeWorkspace.notes || '';
+    notepadContent.disabled = false;
+  } else {
+    notepadContent.value = '';
+    notepadContent.disabled = true;
+  }
+}
+
+let notepadSaveTimeout = null;
+async function saveNotes() {
+  if (!activeWorkspace) return;
+  clearTimeout(notepadSaveTimeout);
+  notepadSaveTimeout = setTimeout(async () => {
+    activeWorkspace.notes = notepadContent.value;
+    await window.quartet.notes.update(activeWorkspace.id, notepadContent.value);
+  }, 500);
+}
+
+function toggleNotepad() {
+  const isCollapsed = notepadPanel.classList.toggle('collapsed');
+  notepadToggle.textContent = isCollapsed ? '◀' : '▶';
+  notepadExpand.classList.toggle('hidden', !isCollapsed);
+}
+
+function expandNotepad() {
+  notepadPanel.classList.remove('collapsed');
+  notepadToggle.textContent = '▶';
+  notepadExpand.classList.add('hidden');
+}
+
+// ============================================
 // UI HELPERS
 // ============================================
 
@@ -935,6 +1125,16 @@ function setupEventListeners() {
     }
   });
 
+  // Sidebar
+  document.getElementById('devtools-btn').addEventListener('click', () => toggleWebviewDevTools(focusedPane));
+  document.getElementById('folder-browse-btn').addEventListener('click', browseFolder);
+  document.getElementById('folder-path-input').addEventListener('click', browseFolder);
+  document.getElementById('git-push-btn').addEventListener('click', gitPush);
+  document.getElementById('git-pull-btn').addEventListener('click', gitPull);
+  document.getElementById('git-refresh-btn').addEventListener('click', checkGitStatus);
+  sidebarToggle.addEventListener('click', toggleSidebar);
+  sidebarExpand.addEventListener('click', expandSidebar);
+
   // Workspace buttons
   document.getElementById('add-workspace').addEventListener('click', openCreateWorkspaceModal);
   document.getElementById('empty-create-workspace').addEventListener('click', openCreateWorkspaceModal);
@@ -973,8 +1173,12 @@ function setupEventListeners() {
     });
   });
 
-  // Resizers
-  // Both vertical resizers (top row and bottom row) slaved to the same action
+  // Notepad
+  notepadContent.addEventListener('input', saveNotes);
+  notepadToggle.addEventListener('click', toggleNotepad);
+  notepadExpand.addEventListener('click', expandNotepad);
+
+  // Vertical resizers — both slaved to same action
   document.querySelectorAll('.pane-vertical-resizer').forEach(resizer => {
     resizer.addEventListener('mousedown', (e) => {
       startResize('vertical', e, {
@@ -984,12 +1188,17 @@ function setupEventListeners() {
     });
   });
 
-  // Row resizer (top vs bottom)
+  // Row resizer
   document.getElementById('row-resizer').addEventListener('mousedown', (e) => {
     startResize('row', e, {
       startTopRowHeight: document.getElementById('top-row').offsetHeight,
       startBottomRowHeight: document.getElementById('bottom-row').offsetHeight,
     });
+  });
+
+  // Notepad resizer
+  document.getElementById('notepad-resizer').addEventListener('mousedown', (e) => {
+    startResize('notepad', e, { startWidth: notepadPanel.offsetWidth });
   });
 
   // Modals
@@ -1032,7 +1241,7 @@ function setupEventListeners() {
       nav?.focus();
       nav?.select();
     }
-    // Cmd+1-9 switch tabs within focused pane
+    // Cmd+1-9 switch tabs within focused pane (but NOT Cmd+Shift+1-4, which is per-pane DevTools)
     if ((e.metaKey || e.ctrlKey) && /^[1-9]$/.test(e.key) && !e.shiftKey) {
       const pd = getPaneData(focusedPane);
       if (pd?.tabs?.length) {
