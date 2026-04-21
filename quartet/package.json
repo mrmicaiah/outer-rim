@@ -1,0 +1,56 @@
+{
+  "name": "quartet",
+  "version": "1.0.0",
+  "description": "Four-pane browser for parallel workstreams",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging --dev",
+    "build:icon": "bash assets/build-icon.sh",
+    "build:mac": "bash assets/build-icon.sh && electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:all": "electron-builder --mac --win"
+  },
+  "keywords": [
+    "browser",
+    "electron",
+    "quad-pane",
+    "workspace"
+  ],
+  "author": "Micaiah",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.quartet.app",
+    "productName": "Quartet",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist/**",
+      "!.git/**",
+      "!*.md",
+      "!assets/generate-icon.py",
+      "!assets/build-icon.sh",
+      "!assets/icon.png",
+      "!assets/icon.iconset/**"
+    ],
+    "asar": false,
+    "mac": {
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.productivity",
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ]
+    },
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
