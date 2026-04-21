@@ -1,11 +1,11 @@
 /* ============================================
    PARALLEL - Hybrid Theme
    Dark title/tab/nav bars, light content + notepad
-   Dual browser panes side-by-side
+   Git sidebar on left, dual browser panes, notepad on right
    ============================================ */
 
 :root {
-  /* Dark areas (title, tab bars, nav bars) */
+  /* Dark areas (title, tab bars, nav bars, sidebar) */
   --dark-bg: #1a1a1f;
   --dark-bg-secondary: #232329;
   --dark-bg-hover: #2d2d35;
@@ -36,11 +36,15 @@
 
   /* Status colors */
   --success: #22c55e;
+  --success-bg: rgba(34, 197, 94, 0.15);
   --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.15);
   --danger: #ef4444;
+  --danger-bg: rgba(239, 68, 68, 0.15);
 
   /* Sizing */
   --title-bar-height: 32px;
+  --sidebar-width: 280px;
   --notepad-width: 280px;
   --workspace-bar-height: 44px;
   --pane-tab-height: 42px;
@@ -117,6 +121,270 @@ body {
 }
 
 /* ============================================
+   LEFT SIDEBAR - Dark (Workspace + Folder + Git)
+   ============================================ */
+
+.sidebar-pane {
+  width: var(--sidebar-width);
+  min-width: 240px;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  background: var(--dark-bg-secondary);
+  border-right: 1px solid var(--dark-border);
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.sidebar-pane.collapsed {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-right: none;
+}
+
+.sidebar-section {
+  padding: 16px;
+  border-bottom: 1px solid var(--dark-border);
+}
+
+.sidebar-section:last-of-type { border-bottom: none; }
+
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.sidebar-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--dark-text-muted);
+}
+
+.sidebar-spacer { flex: 1; }
+
+.sidebar-collapse-btn {
+  background: var(--dark-bg);
+  border: 1px solid var(--dark-border);
+  border-radius: var(--radius);
+  color: var(--dark-text-secondary);
+  cursor: pointer;
+  padding: 8px 14px;
+  margin: 12px 16px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all var(--transition);
+}
+
+.sidebar-collapse-btn:hover {
+  background: var(--dark-bg-hover);
+  color: var(--dark-text);
+  border-color: var(--accent-blue);
+}
+
+#sidebar-expand {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  background: var(--dark-bg-secondary);
+  border: 1px solid var(--dark-border);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  color: var(--dark-text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+#sidebar-expand:hover {
+  background: var(--accent-blue);
+  color: white;
+}
+
+#sidebar-expand.hidden { display: none; }
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--dark-bg);
+  border: 1px solid var(--dark-border);
+  border-radius: var(--radius);
+  color: var(--dark-text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all var(--transition);
+}
+
+.icon-btn:hover {
+  background: var(--accent-purple);
+  border-color: var(--accent-purple);
+  color: white;
+}
+
+.workspace-current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--dark-bg);
+  border: 1px solid var(--dark-border);
+  border-radius: var(--radius);
+}
+
+.workspace-icon { font-size: 18px; }
+
+#workspace-name-display {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dark-text);
+}
+
+.folder-selector { display: flex; gap: 8px; }
+
+#folder-path-input {
+  flex: 1;
+  padding: 10px 12px;
+  background: var(--dark-bg);
+  border: 1px solid var(--dark-border);
+  border-radius: var(--radius);
+  color: var(--dark-text-secondary);
+  font-size: 11px;
+  font-family: 'SF Mono', Monaco, monospace;
+  cursor: pointer;
+  outline: none;
+  transition: all var(--transition);
+}
+
+#folder-path-input:hover { border-color: var(--accent-blue); }
+
+.action-btn {
+  padding: 10px 16px;
+  background: var(--accent-blue);
+  border: none;
+  border-radius: var(--radius);
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.action-btn:hover { background: var(--accent-blue-hover); }
+
+.folder-status {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--dark-text-muted);
+}
+
+#git-section.hidden { display: none; }
+
+.status-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.status-badge.clean { background: var(--success-bg); color: var(--success); }
+.status-badge.changes { background: var(--warning-bg); color: var(--warning); }
+.status-badge.error { background: var(--danger-bg); color: var(--danger); }
+
+.git-status-display {
+  padding: 10px 12px;
+  background: var(--dark-bg);
+  border: 1px solid var(--dark-border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+
+.git-status-text {
+  font-size: 12px;
+  color: var(--dark-text-secondary);
+}
+
+.git-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.git-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.git-btn .btn-icon { font-size: 16px; }
+.git-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.pull-btn { background: var(--accent-blue); color: white; }
+.pull-btn:hover:not(:disabled) { background: var(--accent-blue-hover); }
+
+.push-btn { background: var(--accent-green); color: white; }
+.push-btn:hover:not(:disabled) { background: var(--accent-green-hover); }
+
+.commit-section { margin-bottom: 12px; }
+
+#commit-message {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--dark-bg);
+  border: 1px solid var(--dark-border);
+  border-radius: var(--radius);
+  color: var(--dark-text);
+  font-size: 12px;
+  outline: none;
+  transition: all var(--transition);
+}
+
+#commit-message:focus { border-color: var(--accent-blue); }
+#commit-message::placeholder { color: var(--dark-text-muted); }
+
+.refresh-btn {
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: 1px solid var(--dark-border);
+  border-radius: var(--radius);
+  color: var(--dark-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.refresh-btn:hover {
+  background: var(--dark-bg-hover);
+  color: var(--dark-text-secondary);
+}
+
+/* ============================================
    BROWSER PANES - Dark toolbar, light content
    ============================================ */
 
@@ -135,7 +403,6 @@ body {
   box-shadow: inset 0 2px 0 0 var(--accent-blue);
 }
 
-/* Tab Bar - Dark */
 .pane-tab-bar {
   height: var(--pane-tab-height);
   background: var(--dark-bg-secondary);
@@ -241,7 +508,6 @@ body {
   background: var(--accent-purple-hover);
 }
 
-/* Profile Selector */
 .pane-profile-selector {
   display: flex;
   align-items: center;
@@ -284,7 +550,6 @@ body {
   background: #ea580c;
 }
 
-/* Navigation Bar - Dark */
 .pane-nav-bar {
   height: var(--pane-nav-height);
   background: var(--dark-bg-secondary);
@@ -339,7 +604,6 @@ body {
   background: var(--dark-bg-hover);
 }
 
-/* Webview Container - Light background */
 .pane-webview-container {
   flex: 1;
   position: relative;
@@ -783,7 +1047,6 @@ body {
   background: #dc2626;
 }
 
-/* Profile Modal */
 .profile-modal-desc {
   font-size: 13px;
   color: var(--light-text-secondary);
