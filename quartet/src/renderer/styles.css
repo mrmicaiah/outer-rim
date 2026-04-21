@@ -1,6 +1,7 @@
 /* ============================================
    QUARTET - Hybrid Theme
    Four browser panes in a 2x2 grid
+   Git sidebar on left, notepad on right
    ============================================ */
 
 :root {
@@ -28,10 +29,15 @@
   --accent-red: #ef4444;
 
   --success: #22c55e;
+  --success-bg: rgba(34, 197, 94, 0.15);
   --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.15);
   --danger: #ef4444;
+  --danger-bg: rgba(239, 68, 68, 0.15);
 
   --title-bar-height: 32px;
+  --sidebar-width: 280px;
+  --notepad-width: 280px;
   --workspace-bar-height: 44px;
   --pane-tab-height: 40px;
   --pane-nav-height: 44px;
@@ -96,13 +102,25 @@ body {
   min-height: 400px;
 }
 
+/* OUTER container: horizontal flex — [sidebar] [grid-wrapper] [notepad-resizer] [notepad] */
 #quad-pane-container {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  background: var(--dark-bg);
+  min-height: 0;
+  position: relative;
+}
+
+/* GRID WRAPPER: column flex — this is where the 2x2 grid lives */
+#grid-wrapper {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--dark-bg);
   min-height: 0;
+  min-width: 0;
 }
 
 /* Each row is a horizontal flex container holding two panes + a resizer */
@@ -112,6 +130,270 @@ body {
   overflow: hidden;
   min-height: 150px;
   position: relative;
+}
+
+/* ============================================
+   LEFT SIDEBAR - Dark (Workspace + Folder + Git)
+   ============================================ */
+
+.sidebar-pane {
+  width: var(--sidebar-width);
+  min-width: 240px;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  background: var(--dark-bg-secondary);
+  border-right: 1px solid var(--dark-border);
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.sidebar-pane.collapsed {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-right: none;
+}
+
+.sidebar-section {
+  padding: 16px;
+  border-bottom: 1px solid var(--dark-border);
+}
+
+.sidebar-section:last-of-type { border-bottom: none; }
+
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.sidebar-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--dark-text-muted);
+}
+
+.sidebar-spacer { flex: 1; }
+
+.sidebar-collapse-btn {
+  background: var(--dark-bg);
+  border: 1px solid var(--dark-border);
+  border-radius: var(--radius);
+  color: var(--dark-text-secondary);
+  cursor: pointer;
+  padding: 8px 14px;
+  margin: 12px 16px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all var(--transition);
+}
+
+.sidebar-collapse-btn:hover {
+  background: var(--dark-bg-hover);
+  color: var(--dark-text);
+  border-color: var(--accent-blue);
+}
+
+#sidebar-expand {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  background: var(--dark-bg-secondary);
+  border: 1px solid var(--dark-border);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  color: var(--dark-text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+#sidebar-expand:hover {
+  background: var(--accent-blue);
+  color: white;
+}
+
+#sidebar-expand.hidden { display: none; }
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--dark-bg);
+  border: 1px solid var(--dark-border);
+  border-radius: var(--radius);
+  color: var(--dark-text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all var(--transition);
+}
+
+.icon-btn:hover {
+  background: var(--accent-purple);
+  border-color: var(--accent-purple);
+  color: white;
+}
+
+.workspace-current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--dark-bg);
+  border: 1px solid var(--dark-border);
+  border-radius: var(--radius);
+}
+
+.workspace-icon { font-size: 18px; }
+
+#workspace-name-display {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dark-text);
+}
+
+.folder-selector { display: flex; gap: 8px; }
+
+#folder-path-input {
+  flex: 1;
+  padding: 10px 12px;
+  background: var(--dark-bg);
+  border: 1px solid var(--dark-border);
+  border-radius: var(--radius);
+  color: var(--dark-text-secondary);
+  font-size: 11px;
+  font-family: 'SF Mono', Monaco, monospace;
+  cursor: pointer;
+  outline: none;
+  transition: all var(--transition);
+}
+
+#folder-path-input:hover { border-color: var(--accent-blue); }
+
+.action-btn {
+  padding: 10px 16px;
+  background: var(--accent-blue);
+  border: none;
+  border-radius: var(--radius);
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.action-btn:hover { background: var(--accent-blue-hover); }
+
+.folder-status {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--dark-text-muted);
+}
+
+#git-section.hidden { display: none; }
+
+.status-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.status-badge.clean { background: var(--success-bg); color: var(--success); }
+.status-badge.changes { background: var(--warning-bg); color: var(--warning); }
+.status-badge.error { background: var(--danger-bg); color: var(--danger); }
+
+.git-status-display {
+  padding: 10px 12px;
+  background: var(--dark-bg);
+  border: 1px solid var(--dark-border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+
+.git-status-text {
+  font-size: 12px;
+  color: var(--dark-text-secondary);
+}
+
+.git-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.git-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.git-btn .btn-icon { font-size: 16px; }
+.git-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.pull-btn { background: var(--accent-blue); color: white; }
+.pull-btn:hover:not(:disabled) { background: var(--accent-blue-hover); }
+
+.push-btn { background: var(--accent-green); color: white; }
+.push-btn:hover:not(:disabled) { background: var(--accent-green-hover); }
+
+.commit-section { margin-bottom: 12px; }
+
+#commit-message {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--dark-bg);
+  border: 1px solid var(--dark-border);
+  border-radius: var(--radius);
+  color: var(--dark-text);
+  font-size: 12px;
+  outline: none;
+  transition: all var(--transition);
+}
+
+#commit-message:focus { border-color: var(--accent-blue); }
+#commit-message::placeholder { color: var(--dark-text-muted); }
+
+.refresh-btn {
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: 1px solid var(--dark-border);
+  border-radius: var(--radius);
+  color: var(--dark-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.refresh-btn:hover {
+  background: var(--dark-bg-hover);
+  color: var(--dark-text-secondary);
 }
 
 /* ============================================
@@ -133,7 +415,6 @@ body {
   box-shadow: inset 0 2px 0 0 var(--accent-blue);
 }
 
-/* Tab Bar */
 .pane-tab-bar {
   height: var(--pane-tab-height);
   background: var(--dark-bg-secondary);
@@ -239,7 +520,6 @@ body {
   background: var(--accent-purple-hover);
 }
 
-/* Profile Selector */
 .pane-profile-selector {
   display: flex;
   align-items: center;
@@ -283,7 +563,6 @@ body {
   background: #ea580c;
 }
 
-/* Navigation Bar */
 .pane-nav-bar {
   height: var(--pane-nav-height);
   background: var(--dark-bg-secondary);
@@ -338,7 +617,6 @@ body {
   background: var(--dark-bg-hover);
 }
 
-/* Webview Container */
 .pane-webview-container {
   flex: 1;
   position: relative;
@@ -368,7 +646,7 @@ body {
 }
 
 /* ============================================
-   RESIZERS
+   GRID RESIZERS (inside grid-wrapper)
    ============================================ */
 
 .pane-vertical-resizer {
@@ -394,6 +672,113 @@ body {
 #row-resizer:hover {
   background: var(--accent-blue);
 }
+
+/* ============================================
+   NOTEPAD PANEL (right side)
+   ============================================ */
+
+#notepad-resizer {
+  width: 4px;
+  background: var(--light-border);
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background var(--transition);
+}
+
+#notepad-resizer:hover {
+  background: var(--accent-blue);
+}
+
+#notepad-panel {
+  width: var(--notepad-width);
+  background: var(--light-bg);
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--light-border);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+#notepad-panel.collapsed {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  border: none;
+}
+
+.notepad-header {
+  padding: 12px 14px;
+  background: var(--light-bg-secondary);
+  border-bottom: 1px solid var(--light-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.notepad-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--light-text-secondary);
+}
+
+#notepad-toggle {
+  background: var(--light-bg);
+  border: 1px solid var(--light-border);
+  border-radius: var(--radius);
+  color: var(--light-text-secondary);
+  cursor: pointer;
+  padding: 4px 10px;
+  font-size: 12px;
+  transition: all var(--transition);
+}
+
+#notepad-toggle:hover {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  color: white;
+}
+
+#notepad-content {
+  flex: 1;
+  padding: 14px;
+  background: var(--light-bg);
+  border: none;
+  color: var(--light-text);
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+}
+
+#notepad-expand {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  background: var(--dark-bg-secondary);
+  border: 1px solid var(--dark-border);
+  border-radius: var(--radius) 0 0 var(--radius);
+  color: var(--dark-text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+#notepad-expand:hover {
+  background: var(--accent-blue);
+  color: white;
+}
+
+#notepad-expand.hidden { display: none; }
 
 /* ============================================
    WORKSPACE BAR
@@ -687,7 +1072,6 @@ body {
   background: #dc2626;
 }
 
-/* Profile Modal */
 .profile-modal-desc {
   font-size: 13px;
   color: var(--light-text-secondary);
