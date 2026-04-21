@@ -17,125 +17,214 @@
     <!-- Main Content -->
     <div id="main-content">
       <div id="upper-section">
-        <!-- Quad Pane Container -->
+
+        <!-- Outer container: horizontal flex [sidebar] [grid-wrapper] [notepad-resizer] [notepad] -->
         <div id="quad-pane-container">
 
-          <!-- TOP ROW -->
-          <div class="pane-row" id="top-row">
-            <!-- TOP-LEFT PANE -->
-            <div id="topLeft-pane" class="browser-pane" data-pane="topLeft">
-              <div class="pane-tab-bar">
-                <div class="pane-tab-list" data-pane="topLeft"></div>
-                <button class="pane-add-tab" data-pane="topLeft" title="New Tab">+</button>
-                <div class="pane-profile-selector">
-                  <select class="profile-select" data-pane="topLeft" title="Session Profile">
-                    <option value="default">Default</option>
-                  </select>
-                  <button class="profile-manage-btn" data-pane="topLeft" title="Manage Profiles">⚙</button>
-                </div>
+          <!-- LEFT SIDEBAR: Workspace + Folder + Git -->
+          <div id="sidebar" class="sidebar-pane">
+
+            <div class="sidebar-section">
+              <div class="sidebar-section-header">
+                <span class="sidebar-section-title">Workspace</span>
+                <button id="devtools-btn" class="icon-btn" title="DevTools (F12)">🔧</button>
               </div>
-              <div class="pane-nav-bar hidden" data-pane="topLeft">
-                <button class="nav-btn nav-back" data-pane="topLeft" title="Back">◀</button>
-                <button class="nav-btn nav-forward" data-pane="topLeft" title="Forward">▶</button>
-                <button class="nav-btn nav-refresh" data-pane="topLeft" title="Refresh">↻</button>
-                <input type="text" class="nav-url" data-pane="topLeft" placeholder="Enter URL or search...">
-              </div>
-              <div class="pane-webview-container" data-pane="topLeft">
-                <div class="pane-empty-state">
-                  <p>Click + to open a tab</p>
+              <div id="workspace-display">
+                <div class="workspace-current">
+                  <span class="workspace-icon">📁</span>
+                  <span id="workspace-name-display">No workspace</span>
                 </div>
               </div>
             </div>
 
-            <!-- VERTICAL RESIZER (top row) -->
-            <div class="pane-vertical-resizer" data-row="top"></div>
-
-            <!-- TOP-RIGHT PANE -->
-            <div id="topRight-pane" class="browser-pane" data-pane="topRight">
-              <div class="pane-tab-bar">
-                <div class="pane-tab-list" data-pane="topRight"></div>
-                <button class="pane-add-tab" data-pane="topRight" title="New Tab">+</button>
-                <div class="pane-profile-selector">
-                  <select class="profile-select" data-pane="topRight" title="Session Profile">
-                    <option value="default">Default</option>
-                  </select>
-                  <button class="profile-manage-btn" data-pane="topRight" title="Manage Profiles">⚙</button>
-                </div>
+            <div class="sidebar-section">
+              <div class="sidebar-section-header">
+                <span class="sidebar-section-title">Project Folder</span>
               </div>
-              <div class="pane-nav-bar hidden" data-pane="topRight">
-                <button class="nav-btn nav-back" data-pane="topRight" title="Back">◀</button>
-                <button class="nav-btn nav-forward" data-pane="topRight" title="Forward">▶</button>
-                <button class="nav-btn nav-refresh" data-pane="topRight" title="Refresh">↻</button>
-                <input type="text" class="nav-url" data-pane="topRight" placeholder="Enter URL or search...">
+              <div class="folder-selector">
+                <input type="text" id="folder-path-input" placeholder="Select a folder..." readonly>
+                <button id="folder-browse-btn" class="action-btn">Browse</button>
               </div>
-              <div class="pane-webview-container" data-pane="topRight">
-                <div class="pane-empty-state">
-                  <p>Click + to open a tab</p>
-                </div>
-              </div>
+              <div id="folder-status" class="folder-status"></div>
             </div>
+
+            <div id="git-section" class="sidebar-section hidden">
+              <div class="sidebar-section-header">
+                <span class="sidebar-section-title">Git</span>
+                <span id="git-status-badge" class="status-badge"></span>
+              </div>
+
+              <div id="git-status-display" class="git-status-display">
+                <span class="git-status-text">Checking...</span>
+              </div>
+
+              <div class="git-actions">
+                <button id="git-pull-btn" class="git-btn pull-btn">
+                  <span class="btn-icon">⬇</span>
+                  <span class="btn-text">Pull</span>
+                </button>
+                <button id="git-push-btn" class="git-btn push-btn">
+                  <span class="btn-icon">⬆</span>
+                  <span class="btn-text">Push</span>
+                </button>
+              </div>
+
+              <div class="commit-section">
+                <input type="text" id="commit-message" placeholder="Commit message (optional)">
+              </div>
+
+              <button id="git-refresh-btn" class="refresh-btn">
+                <span>↻</span> Refresh Status
+              </button>
+            </div>
+
+            <div class="sidebar-spacer"></div>
+
+            <button id="sidebar-toggle" class="sidebar-collapse-btn" title="Collapse sidebar">◀</button>
           </div>
 
-          <!-- HORIZONTAL RESIZER -->
-          <div id="row-resizer"></div>
+          <!-- Expand button shown when sidebar is collapsed -->
+          <button id="sidebar-expand" class="hidden" title="Expand sidebar">📁</button>
 
-          <!-- BOTTOM ROW -->
-          <div class="pane-row" id="bottom-row">
-            <!-- BOTTOM-LEFT PANE -->
-            <div id="bottomLeft-pane" class="browser-pane" data-pane="bottomLeft">
-              <div class="pane-tab-bar">
-                <div class="pane-tab-list" data-pane="bottomLeft"></div>
-                <button class="pane-add-tab" data-pane="bottomLeft" title="New Tab">+</button>
-                <div class="pane-profile-selector">
-                  <select class="profile-select" data-pane="bottomLeft" title="Session Profile">
-                    <option value="default">Default</option>
-                  </select>
-                  <button class="profile-manage-btn" data-pane="bottomLeft" title="Manage Profiles">⚙</button>
+          <!-- GRID WRAPPER: contains the 2x2 grid of browser panes -->
+          <div id="grid-wrapper">
+
+            <!-- TOP ROW -->
+            <div class="pane-row" id="top-row">
+              <!-- TOP-LEFT PANE -->
+              <div id="topLeft-pane" class="browser-pane" data-pane="topLeft">
+                <div class="pane-tab-bar">
+                  <div class="pane-tab-list" data-pane="topLeft"></div>
+                  <button class="pane-add-tab" data-pane="topLeft" title="New Tab">+</button>
+                  <div class="pane-profile-selector">
+                    <select class="profile-select" data-pane="topLeft" title="Session Profile">
+                      <option value="default">Default</option>
+                    </select>
+                    <button class="profile-manage-btn" data-pane="topLeft" title="Manage Profiles">⚙</button>
+                  </div>
+                </div>
+                <div class="pane-nav-bar hidden" data-pane="topLeft">
+                  <button class="nav-btn nav-back" data-pane="topLeft" title="Back">◀</button>
+                  <button class="nav-btn nav-forward" data-pane="topLeft" title="Forward">▶</button>
+                  <button class="nav-btn nav-refresh" data-pane="topLeft" title="Refresh">↻</button>
+                  <input type="text" class="nav-url" data-pane="topLeft" placeholder="Enter URL or search...">
+                </div>
+                <div class="pane-webview-container" data-pane="topLeft">
+                  <div class="pane-empty-state">
+                    <p>Click + to open a tab</p>
+                  </div>
                 </div>
               </div>
-              <div class="pane-nav-bar hidden" data-pane="bottomLeft">
-                <button class="nav-btn nav-back" data-pane="bottomLeft" title="Back">◀</button>
-                <button class="nav-btn nav-forward" data-pane="bottomLeft" title="Forward">▶</button>
-                <button class="nav-btn nav-refresh" data-pane="bottomLeft" title="Refresh">↻</button>
-                <input type="text" class="nav-url" data-pane="bottomLeft" placeholder="Enter URL or search...">
-              </div>
-              <div class="pane-webview-container" data-pane="bottomLeft">
-                <div class="pane-empty-state">
-                  <p>Click + to open a tab</p>
+
+              <!-- VERTICAL RESIZER (top row) -->
+              <div class="pane-vertical-resizer" data-row="top"></div>
+
+              <!-- TOP-RIGHT PANE -->
+              <div id="topRight-pane" class="browser-pane" data-pane="topRight">
+                <div class="pane-tab-bar">
+                  <div class="pane-tab-list" data-pane="topRight"></div>
+                  <button class="pane-add-tab" data-pane="topRight" title="New Tab">+</button>
+                  <div class="pane-profile-selector">
+                    <select class="profile-select" data-pane="topRight" title="Session Profile">
+                      <option value="default">Default</option>
+                    </select>
+                    <button class="profile-manage-btn" data-pane="topRight" title="Manage Profiles">⚙</button>
+                  </div>
+                </div>
+                <div class="pane-nav-bar hidden" data-pane="topRight">
+                  <button class="nav-btn nav-back" data-pane="topRight" title="Back">◀</button>
+                  <button class="nav-btn nav-forward" data-pane="topRight" title="Forward">▶</button>
+                  <button class="nav-btn nav-refresh" data-pane="topRight" title="Refresh">↻</button>
+                  <input type="text" class="nav-url" data-pane="topRight" placeholder="Enter URL or search...">
+                </div>
+                <div class="pane-webview-container" data-pane="topRight">
+                  <div class="pane-empty-state">
+                    <p>Click + to open a tab</p>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <!-- VERTICAL RESIZER (bottom row - slaved to top row in JS) -->
-            <div class="pane-vertical-resizer" data-row="bottom"></div>
+            <!-- HORIZONTAL RESIZER -->
+            <div id="row-resizer"></div>
 
-            <!-- BOTTOM-RIGHT PANE -->
-            <div id="bottomRight-pane" class="browser-pane" data-pane="bottomRight">
-              <div class="pane-tab-bar">
-                <div class="pane-tab-list" data-pane="bottomRight"></div>
-                <button class="pane-add-tab" data-pane="bottomRight" title="New Tab">+</button>
-                <div class="pane-profile-selector">
-                  <select class="profile-select" data-pane="bottomRight" title="Session Profile">
-                    <option value="default">Default</option>
-                  </select>
-                  <button class="profile-manage-btn" data-pane="bottomRight" title="Manage Profiles">⚙</button>
+            <!-- BOTTOM ROW -->
+            <div class="pane-row" id="bottom-row">
+              <!-- BOTTOM-LEFT PANE -->
+              <div id="bottomLeft-pane" class="browser-pane" data-pane="bottomLeft">
+                <div class="pane-tab-bar">
+                  <div class="pane-tab-list" data-pane="bottomLeft"></div>
+                  <button class="pane-add-tab" data-pane="bottomLeft" title="New Tab">+</button>
+                  <div class="pane-profile-selector">
+                    <select class="profile-select" data-pane="bottomLeft" title="Session Profile">
+                      <option value="default">Default</option>
+                    </select>
+                    <button class="profile-manage-btn" data-pane="bottomLeft" title="Manage Profiles">⚙</button>
+                  </div>
+                </div>
+                <div class="pane-nav-bar hidden" data-pane="bottomLeft">
+                  <button class="nav-btn nav-back" data-pane="bottomLeft" title="Back">◀</button>
+                  <button class="nav-btn nav-forward" data-pane="bottomLeft" title="Forward">▶</button>
+                  <button class="nav-btn nav-refresh" data-pane="bottomLeft" title="Refresh">↻</button>
+                  <input type="text" class="nav-url" data-pane="bottomLeft" placeholder="Enter URL or search...">
+                </div>
+                <div class="pane-webview-container" data-pane="bottomLeft">
+                  <div class="pane-empty-state">
+                    <p>Click + to open a tab</p>
+                  </div>
                 </div>
               </div>
-              <div class="pane-nav-bar hidden" data-pane="bottomRight">
-                <button class="nav-btn nav-back" data-pane="bottomRight" title="Back">◀</button>
-                <button class="nav-btn nav-forward" data-pane="bottomRight" title="Forward">▶</button>
-                <button class="nav-btn nav-refresh" data-pane="bottomRight" title="Refresh">↻</button>
-                <input type="text" class="nav-url" data-pane="bottomRight" placeholder="Enter URL or search...">
-              </div>
-              <div class="pane-webview-container" data-pane="bottomRight">
-                <div class="pane-empty-state">
-                  <p>Click + to open a tab</p>
+
+              <!-- VERTICAL RESIZER (bottom row - slaved to top row in JS) -->
+              <div class="pane-vertical-resizer" data-row="bottom"></div>
+
+              <!-- BOTTOM-RIGHT PANE -->
+              <div id="bottomRight-pane" class="browser-pane" data-pane="bottomRight">
+                <div class="pane-tab-bar">
+                  <div class="pane-tab-list" data-pane="bottomRight"></div>
+                  <button class="pane-add-tab" data-pane="bottomRight" title="New Tab">+</button>
+                  <div class="pane-profile-selector">
+                    <select class="profile-select" data-pane="bottomRight" title="Session Profile">
+                      <option value="default">Default</option>
+                    </select>
+                    <button class="profile-manage-btn" data-pane="bottomRight" title="Manage Profiles">⚙</button>
+                  </div>
+                </div>
+                <div class="pane-nav-bar hidden" data-pane="bottomRight">
+                  <button class="nav-btn nav-back" data-pane="bottomRight" title="Back">◀</button>
+                  <button class="nav-btn nav-forward" data-pane="bottomRight" title="Forward">▶</button>
+                  <button class="nav-btn nav-refresh" data-pane="bottomRight" title="Refresh">↻</button>
+                  <input type="text" class="nav-url" data-pane="bottomRight" placeholder="Enter URL or search...">
+                </div>
+                <div class="pane-webview-container" data-pane="bottomRight">
+                  <div class="pane-empty-state">
+                    <p>Click + to open a tab</p>
+                  </div>
                 </div>
               </div>
             </div>
+
           </div>
+          <!-- end grid-wrapper -->
+
+          <!-- Notepad Resizer -->
+          <div id="notepad-resizer"></div>
+
+          <!-- Notepad Panel -->
+          <div id="notepad-panel">
+            <div class="notepad-header">
+              <span class="notepad-title">📝 Notes</span>
+              <button id="notepad-toggle" title="Collapse">▶</button>
+            </div>
+            <textarea id="notepad-content" placeholder="Workspace notes..."></textarea>
+          </div>
+
+          <!-- Notepad Expand Button (when collapsed) -->
+          <button id="notepad-expand" class="hidden" title="Expand Notes">📝</button>
 
         </div>
+        <!-- end quad-pane-container -->
+
       </div>
 
       <!-- Workspace Bar -->
