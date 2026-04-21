@@ -1,5 +1,6 @@
 // ============================================
 // PARALLEL - Dual-Pane Browser for Parallel Workstreams
+// with Git sidebar (left) + Notepad (right)
 // ============================================
 
 function uuidv4() {
@@ -19,13 +20,18 @@ const createdWebviews = new Set();
 let currentResizer = null;
 let resizeOverlay = null;
 
-// DOM Elements
+// DOM Elements — main
 const workspaceList = document.getElementById('workspace-list');
 const notepadContent = document.getElementById('notepad-content');
 const emptyStateOverlay = document.getElementById('empty-state-overlay');
 const notepadPanel = document.getElementById('notepad-panel');
 const notepadExpand = document.getElementById('notepad-expand');
 const notepadToggle = document.getElementById('notepad-toggle');
+
+// Sidebar elements
+const sidebar = document.getElementById('sidebar');
+const sidebarExpand = document.getElementById('sidebar-expand');
+const sidebarToggle = document.getElementById('sidebar-toggle');
 
 // Modals
 const modalOverlay = document.getElementById('modal-overlay');
@@ -35,7 +41,7 @@ const tabUrlInput = document.getElementById('tab-url-input');
 const profileModalOverlay = document.getElementById('profile-modal-overlay');
 
 // Modal transient state
-let pendingTabPaneId = 'left'; // which pane the new-tab modal will create into
+let pendingTabPaneId = 'left';
 
 const PANES = ['left', 'right'];
 
@@ -67,11 +73,11 @@ async function init() {
   renderWorkspaces();
   PANES.forEach(p => renderPane(p));
   updateNotepad();
+  updateSidebar();
   updateEmptyState();
   setFocusedPane('left');
   setupEventListeners();
 
-  // Menu sends (event, pane) — pane may be 'left', 'right', or null (= focused pane)
   window.parallel.onMenuToggleDevTools((event, pane) => {
     toggleWebviewDevTools(pane || focusedPane);
   });
@@ -91,13 +97,11 @@ function migrateWorkspaceStructure(workspace) {
     return;
   }
 
-  // Ensure both panes exist
   PANES.forEach(paneId => {
     if (!workspace.panes[paneId]) {
       workspace.panes[paneId] = { activeProfileId: 'default', profiles: { 'default': { tabs: [], activeTabId: null } } };
     }
     const pane = workspace.panes[paneId];
-    // Legacy migration: old shape with pane.tabs directly
     if (!pane.profiles) {
       const oldProfileId = pane.profileId || 'default';
       workspace.panes[paneId] = {
@@ -146,6 +150,152 @@ function setFocusedPane(paneId) {
     const el = document.getElementById(`${p}-pane`);
     if (el) el.classList.toggle('focused', p === paneId);
   });
+}
+
+// ============================================
+// SIDEBAR - Workspace display, Folder, Git
+// ============================================
+
+function updateSidebar() {
+  const nameDisplay = document.getElementById('workspace-name-display');
+  const folderInput = document.getElementById('folder-path-input');
+  const folderStatus = document.getElementById('folder-status');
+  const gitSection = document.getElementById('git-section');
+
+  if (activeWorkspace) {
+    nameDisplay.textContent = activeWorkspace.name;
+    const folder = activeWorkspace.folderPath || '';
+    folderInput.value = folder || '';
+    folderInput.placeholder = folder ? '' : 'Select a folder...';
+
+    if (folder) {
+      folderStatus.textContent = '';
+      gitSection.classList.remove('hidden');
+      checkGitStatus();
+    } else {
+      folderStatus.textContent = 'No folder selected';
+      gitSection.classList.add('hidden');
+    }
+  } else {
+    nameDisplay.textContent = 'No workspace';
+    folderInput.value = '';
+    folderInput.placeholder = 'Select a folder...';
+    folderStatus.textContent = '';
+    gitSection.classList.add('hidden');
+  }
+}
+
+async function checkGitStatus() {
+  if (!activeWorkspace?.folderPath) return;
+
+  const badge = document.getElementById('git-status-badge');
+  const statusDisplay = document.getElementById('git-status-display');
+  const statusText = statusDisplay.querySelector('.git-status-text');
+
+  badge.textContent = '...';
+  badge.className = 'status-badge';
+  statusText.textContent = 'Checking status...';
+
+  try {
+    const result = await window.parallel.git.status(activeWorkspace.folderPath);
+    if (result.success) {
+      if (result.hasChanges) {
+        badge.textContent = `${result.changes.length} changed`;
+        badge.className = 'status-badge changes';
+        const fileList = result.changes.slice(0, 5).map(c => `${c.status} ${c.file}`).join('\n');
+        const more = result.changes.length > 5 ? `\n...and ${result.changes.length - 5} more` : '';
+        statusText.textContent = `${result.changes.length} file(s) changed`;
+        statusText.title = fileList + more;
+      } else {
+        badge.textContent = 'Clean';
+        badge.className = 'status-badge clean';
+        statusText.textContent = 'Working tree clean';
+        statusText.title = '';
+      }
+    } else {
+      badge.textContent = 'Error';
+      badge.className = 'status-badge error';
+      statusText.textContent = result.error || 'Not a git repository';
+    }
+  } catch (err) {
+    badge.textContent = 'Error';
+    badge.className = 'status-badge error';
+    statusText.textContent = err.message;
+  }
+}
+
+async function gitPush() {
+  if (!activeWorkspace?.folderPath) return;
+
+  const btn = document.getElementById('git-push-btn');
+  const statusText = document.querySelector('#git-status-display .git-status-text');
+  const commitInput = document.getElementById('commit-message');
+
+  btn.disabled = true;
+  btn.querySelector('.btn-text').textContent = 'Pushing...';
+  statusText.textContent = 'Adding and committing...';
+
+  try {
+    const message = commitInput.value.trim() || undefined;
+    const result = await window.parallel.git.push(activeWorkspace.folderPath, message);
+    if (result.success) {
+      statusText.textContent = result.message || '✓ Pushed successfully!';
+      commitInput.value = '';
+      setTimeout(() => checkGitStatus(), 1000);
+    } else {
+      statusText.textContent = '✗ ' + result.error;
+    }
+  } catch (err) {
+    statusText.textContent = '✗ ' + err.message;
+  }
+
+  btn.disabled = false;
+  btn.querySelector('.btn-text').textContent = 'Push';
+}
+
+async function gitPull() {
+  if (!activeWorkspace?.folderPath) return;
+
+  const btn = document.getElementById('git-pull-btn');
+  const statusText = document.querySelector('#git-status-display .git-status-text');
+
+  btn.disabled = true;
+  btn.querySelector('.btn-text').textContent = 'Pulling...';
+  statusText.textContent = 'Pulling from remote...';
+
+  try {
+    const result = await window.parallel.git.pull(activeWorkspace.folderPath);
+    if (result.success) {
+      statusText.textContent = result.message || '✓ Pulled successfully!';
+      setTimeout(() => checkGitStatus(), 1000);
+    } else {
+      statusText.textContent = '✗ ' + result.error;
+    }
+  } catch (err) {
+    statusText.textContent = '✗ ' + err.message;
+  }
+
+  btn.disabled = false;
+  btn.querySelector('.btn-text').textContent = 'Pull';
+}
+
+async function browseFolder() {
+  const folder = await window.parallel.project.browse();
+  if (folder && activeWorkspace) {
+    activeWorkspace.folderPath = folder;
+    await window.parallel.workspace.update(activeWorkspace);
+    updateSidebar();
+  }
+}
+
+function toggleSidebar() {
+  const isCollapsed = sidebar.classList.toggle('collapsed');
+  sidebarExpand.classList.toggle('hidden', !isCollapsed);
+}
+
+function expandSidebar() {
+  sidebar.classList.remove('collapsed');
+  sidebarExpand.classList.add('hidden');
 }
 
 // ============================================
@@ -301,7 +451,6 @@ function toggleWebviewDevTools(paneId) {
   }
 }
 
-// Force webview to repaint after DevTools closes
 function setupWebviewDevToolsHandler(webview) {
   webview.addEventListener('devtools-closed', () => {
     if (webview.classList.contains('active')) {
@@ -437,7 +586,6 @@ function renderWorkspaces() {
 }
 
 async function createWorkspace(name) {
-  // Default: open claude.ai in right pane, blank left pane
   const claudeTab = { id: uuidv4(), url: 'https://claude.ai', title: 'Loading...', createdAt: new Date().toISOString() };
 
   const workspace = {
@@ -454,6 +602,7 @@ async function createWorkspace(name) {
       }
     },
     notes: '',
+    folderPath: '',
     createdAt: new Date().toISOString()
   };
 
@@ -465,11 +614,11 @@ async function createWorkspace(name) {
   renderWorkspaces();
   PANES.forEach(p => renderPane(p));
   updateNotepad();
+  updateSidebar();
   updateEmptyState();
 }
 
 async function switchWorkspace(workspaceId) {
-  // Clear all webviews from both panes
   document.querySelectorAll('.pane-webview-container webview').forEach(wv => wv.remove());
   createdWebviews.clear();
 
@@ -482,6 +631,7 @@ async function switchWorkspace(workspaceId) {
   renderWorkspaces();
   PANES.forEach(p => renderPane(p));
   updateNotepad();
+  updateSidebar();
 }
 
 async function deleteWorkspace(workspaceId) {
@@ -500,6 +650,7 @@ async function deleteWorkspace(workspaceId) {
   renderWorkspaces();
   PANES.forEach(p => renderPane(p));
   updateNotepad();
+  updateSidebar();
   updateEmptyState();
 }
 
@@ -509,6 +660,7 @@ async function renameWorkspace(workspaceId, newName) {
     workspace.name = newName;
     await window.parallel.workspace.update(workspace);
     renderWorkspaces();
+    updateSidebar();
   }
 }
 
@@ -541,7 +693,6 @@ function renderPane(paneId) {
   emptyState.style.display = hasTabs ? 'none' : 'block';
   navBar.classList.toggle('hidden', !hasTabs);
 
-  // Deactivate all webviews in this pane
   webviewContainer.querySelectorAll('webview').forEach(wv => wv.classList.remove('active'));
 
   Object.entries(pane.profiles || {}).forEach(([profileId, profileData]) => {
@@ -668,12 +819,10 @@ async function switchTab(paneId, tabId) {
   paneData.activeTabId = tabId;
   await window.parallel.workspace.update(activeWorkspace);
 
-  // Update tab bar highlight within this pane only
   document.querySelectorAll(`.pane-tab-list[data-pane="${paneId}"] .pane-tab-item`).forEach(item => {
     item.classList.toggle('active', item.dataset.id === tabId);
   });
 
-  // Update webview visibility within this pane only
   document.querySelectorAll(`.pane-webview-container[data-pane="${paneId}"] webview`).forEach(wv => {
     wv.classList.toggle('active', wv.id === `webview-${paneId}-${profileId}-${tabId}`);
   });
@@ -770,7 +919,6 @@ async function updateTabUrl(paneId, tabId, url, profileId) {
       const navUrl = document.querySelector(`.nav-url[data-pane="${paneId}"]`);
       if (navUrl) navUrl.value = url;
 
-      // Also refresh favicon in tab bar
       const tabEl = document.querySelector(`.pane-tab-list[data-pane="${paneId}"] .pane-tab-item[data-id="${tabId}"] .pane-tab-favicon`);
       if (tabEl) {
         tabEl.src = getFaviconUrl(url);
@@ -818,13 +966,13 @@ async function saveNotes() {
 
 function toggleNotepad() {
   const isCollapsed = notepadPanel.classList.toggle('collapsed');
-  notepadToggle.textContent = isCollapsed ? '▶' : '◀';
+  notepadToggle.textContent = isCollapsed ? '◀' : '▶';
   notepadExpand.classList.toggle('hidden', !isCollapsed);
 }
 
 function expandNotepad() {
   notepadPanel.classList.remove('collapsed');
-  notepadToggle.textContent = '◀';
+  notepadToggle.textContent = '▶';
   notepadExpand.classList.add('hidden');
 }
 
@@ -918,20 +1066,26 @@ function setupEventListeners() {
   document.addEventListener('mousemove', handleMouseMove);
   document.addEventListener('mouseup', stopResize);
 
-  // Focused pane tracking — click anywhere inside a pane to focus it
   PANES.forEach(paneId => {
     const paneEl = document.getElementById(`${paneId}-pane`);
     if (paneEl) {
       paneEl.addEventListener('mousedown', () => setFocusedPane(paneId));
-      // webview 'focus' doesn't always bubble, so we also rely on mousedown on the container
     }
   });
 
-  // Workspace buttons
+  // Sidebar
+  document.getElementById('devtools-btn').addEventListener('click', () => toggleWebviewDevTools(focusedPane));
+  document.getElementById('folder-browse-btn').addEventListener('click', browseFolder);
+  document.getElementById('folder-path-input').addEventListener('click', browseFolder);
+  document.getElementById('git-push-btn').addEventListener('click', gitPush);
+  document.getElementById('git-pull-btn').addEventListener('click', gitPull);
+  document.getElementById('git-refresh-btn').addEventListener('click', checkGitStatus);
+  sidebarToggle.addEventListener('click', toggleSidebar);
+  sidebarExpand.addEventListener('click', expandSidebar);
+
   document.getElementById('add-workspace').addEventListener('click', openCreateWorkspaceModal);
   document.getElementById('empty-create-workspace').addEventListener('click', openCreateWorkspaceModal);
 
-  // Tab management — per pane
   document.querySelectorAll('.pane-add-tab').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const paneId = btn.dataset.pane;
@@ -940,7 +1094,6 @@ function setupEventListeners() {
     });
   });
 
-  // Profile management — per pane
   document.querySelectorAll('.profile-select').forEach(select => {
     select.addEventListener('change', (e) => {
       const paneId = select.dataset.pane;
@@ -955,7 +1108,6 @@ function setupEventListeners() {
   document.getElementById('new-profile-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addProfile(); });
   profileModalOverlay.addEventListener('click', (e) => { if (e.target === profileModalOverlay) closeProfileModal(); });
 
-  // Navigation — per pane
   PANES.forEach(paneId => {
     document.querySelector(`.nav-back[data-pane="${paneId}"]`).addEventListener('click', () => navigateBack(paneId));
     document.querySelector(`.nav-forward[data-pane="${paneId}"]`).addEventListener('click', () => navigateForward(paneId));
@@ -965,12 +1117,10 @@ function setupEventListeners() {
     });
   });
 
-  // Notepad
   notepadContent.addEventListener('input', saveNotes);
   notepadToggle.addEventListener('click', toggleNotepad);
   notepadExpand.addEventListener('click', expandNotepad);
 
-  // Resizers
   document.getElementById('pane-resizer').addEventListener('mousedown', (e) => {
     startResize('pane', e, {
       startLeftWidth: document.getElementById('left-pane').offsetWidth,
@@ -981,7 +1131,6 @@ function setupEventListeners() {
     startResize('notepad', e, { startWidth: notepadPanel.offsetWidth });
   });
 
-  // Modals
   document.getElementById('modal-cancel').addEventListener('click', closeWorkspaceModal);
   document.getElementById('modal-confirm').addEventListener('click', confirmWorkspaceModal);
   modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeWorkspaceModal(); });
@@ -996,7 +1145,6 @@ function setupEventListeners() {
     btn.addEventListener('click', () => { createTab(pendingTabPaneId, btn.dataset.url); closeTabModal(); });
   });
 
-  // Keyboard shortcuts — routed to focused pane
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 't') {
       e.preventDefault();
@@ -1021,7 +1169,6 @@ function setupEventListeners() {
       nav?.focus();
       nav?.select();
     }
-    // Cmd+1-9 switch tabs within focused pane
     if ((e.metaKey || e.ctrlKey) && /^[1-9]$/.test(e.key)) {
       const pd = getPaneData(focusedPane);
       if (pd?.tabs?.length) {
