@@ -18,6 +18,15 @@ contextBridge.exposeInMainWorld('parallel', {
     delete: (id) => ipcRenderer.invoke('profiles:delete', id),
     rename: (id, name) => ipcRenderer.invoke('profiles:rename', id, name),
   },
+  project: {
+    browse: () => ipcRenderer.invoke('project:browse'),
+    exists: (localPath) => ipcRenderer.invoke('project:exists', localPath),
+  },
+  git: {
+    status: (projectPath) => ipcRenderer.invoke('git:status', projectPath),
+    push: (projectPath, message) => ipcRenderer.invoke('git:push', projectPath, message),
+    pull: (projectPath) => ipcRenderer.invoke('git:pull', projectPath),
+  },
   devtools: {
     toggle: () => ipcRenderer.invoke('devtools:toggle'),
     openWebview: (pane) => ipcRenderer.invoke('devtools:openWebview', pane),
