@@ -17,8 +17,72 @@
     <!-- Main Content -->
     <div id="main-content">
       <div id="upper-section">
-        <!-- Dual Pane Container -->
         <div id="dual-pane-container">
+
+          <!-- LEFT SIDEBAR: Workspace + Folder + Git -->
+          <div id="sidebar" class="sidebar-pane">
+
+            <div class="sidebar-section">
+              <div class="sidebar-section-header">
+                <span class="sidebar-section-title">Workspace</span>
+                <button id="devtools-btn" class="icon-btn" title="DevTools (F12)">🔧</button>
+              </div>
+              <div id="workspace-display">
+                <div class="workspace-current">
+                  <span class="workspace-icon">📁</span>
+                  <span id="workspace-name-display">No workspace</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="sidebar-section">
+              <div class="sidebar-section-header">
+                <span class="sidebar-section-title">Project Folder</span>
+              </div>
+              <div class="folder-selector">
+                <input type="text" id="folder-path-input" placeholder="Select a folder..." readonly>
+                <button id="folder-browse-btn" class="action-btn">Browse</button>
+              </div>
+              <div id="folder-status" class="folder-status"></div>
+            </div>
+
+            <div id="git-section" class="sidebar-section hidden">
+              <div class="sidebar-section-header">
+                <span class="sidebar-section-title">Git</span>
+                <span id="git-status-badge" class="status-badge"></span>
+              </div>
+
+              <div id="git-status-display" class="git-status-display">
+                <span class="git-status-text">Checking...</span>
+              </div>
+
+              <div class="git-actions">
+                <button id="git-pull-btn" class="git-btn pull-btn">
+                  <span class="btn-icon">⬇</span>
+                  <span class="btn-text">Pull</span>
+                </button>
+                <button id="git-push-btn" class="git-btn push-btn">
+                  <span class="btn-icon">⬆</span>
+                  <span class="btn-text">Push</span>
+                </button>
+              </div>
+
+              <div class="commit-section">
+                <input type="text" id="commit-message" placeholder="Commit message (optional)">
+              </div>
+
+              <button id="git-refresh-btn" class="refresh-btn">
+                <span>↻</span> Refresh Status
+              </button>
+            </div>
+
+            <div class="sidebar-spacer"></div>
+
+            <button id="sidebar-toggle" class="sidebar-collapse-btn" title="Collapse sidebar">◀</button>
+          </div>
+
+          <!-- Expand button shown when sidebar is collapsed -->
+          <button id="sidebar-expand" class="hidden" title="Expand sidebar">📁</button>
 
           <!-- LEFT PANE: Browser -->
           <div id="left-pane" class="browser-pane" data-pane="left">
@@ -80,12 +144,11 @@
           <div id="notepad-panel">
             <div class="notepad-header">
               <span class="notepad-title">📝 Notes</span>
-              <button id="notepad-toggle" title="Collapse">◀</button>
+              <button id="notepad-toggle" title="Collapse">▶</button>
             </div>
             <textarea id="notepad-content" placeholder="Workspace notes..."></textarea>
           </div>
 
-          <!-- Notepad Expand Button (when collapsed) -->
           <button id="notepad-expand" class="hidden" title="Expand Notes">📝</button>
         </div>
       </div>
