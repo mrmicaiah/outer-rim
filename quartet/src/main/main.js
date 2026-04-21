@@ -1,16 +1,65 @@
-const { app, BrowserWindow, ipcMain, Menu, session } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, session, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { spawn, spawnSync } = require('child_process');
 const Store = require('./store');
 
 const store = new Store();
 
 let mainWindow;
 
+// ============================================
+// GIT HELPERS
+// ============================================
+
+function findGitPath() {
+  const candidates = ['/usr/bin/git', '/opt/homebrew/bin/git', '/usr/local/bin/git'];
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        const result = spawnSync(candidate, ['--version'], { timeout: 5000 });
+        if (result.status === 0) return candidate;
+      }
+    } catch (e) {}
+  }
+  return 'git';
+}
+
+let GIT_PATH = null;
+function getGitPath() {
+  if (!GIT_PATH) GIT_PATH = findGitPath();
+  return GIT_PATH;
+}
+
+const SHELL_ENV = {
+  ...process.env,
+  PATH: `/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin:${process.env.PATH || ''}`,
+  HOME: os.homedir()
+};
+
+function runGit(args, options = {}) {
+  return new Promise((resolve) => {
+    const gitPath = getGitPath();
+    const cwd = options.cwd || os.homedir();
+    const timeout = options.timeout || 60000;
+
+    const child = spawn(gitPath, args, { cwd, env: SHELL_ENV, timeout });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', (d) => { stdout += d.toString(); });
+    child.stderr.on('data', (d) => { stderr += d.toString(); });
+    child.on('error', (err) => resolve({ success: false, stdout, stderr: stderr || err.message, code: -1, error: err.message }));
+    child.on('close', (code) => resolve({ success: code === 0, stdout, stderr, code: code || 0 }));
+
+    if (timeout > 0) setTimeout(() => { try { child.kill(); } catch (e) {} }, timeout);
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1800,
     height: 1100,
-    minWidth: 1100,
+    minWidth: 1400,
     minHeight: 700,
     title: 'Quartet',
     titleBarStyle: 'hiddenInset',
@@ -248,4 +297,80 @@ ipcMain.handle('profiles:rename', (event, id, name) => {
   const profile = profiles.find(p => p.id === id);
   if (profile) { profile.name = name; store.set('profiles', profiles); }
   return profiles;
+});
+
+// ============================================
+// PROJECT FOLDER
+// ============================================
+
+function resolvePath(p) {
+  if (!p) return p;
+  if (p.startsWith('~')) return p.replace('~', os.homedir());
+  return p;
+}
+
+ipcMain.handle('project:browse', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: 'Select Project Folder'
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+ipcMain.handle('project:exists', async (event, localPath) => {
+  const resolved = resolvePath(localPath);
+  return fs.existsSync(resolved);
+});
+
+// ============================================
+// GIT
+// ============================================
+
+ipcMain.handle('git:status', async (event, projectPath) => {
+  const cwd = resolvePath(projectPath);
+
+  if (!fs.existsSync(path.join(cwd, '.git'))) {
+    return { success: false, error: 'Not a git repository' };
+  }
+
+  const result = await runGit(['status', '--porcelain'], { cwd });
+  if (result.success) {
+    const changes = result.stdout.trim().split('\n').filter(Boolean).map(line => ({
+      status: line.substring(0, 2).trim(),
+      file: line.substring(3)
+    }));
+    return { success: true, changes, hasChanges: changes.length > 0 };
+  }
+  return { success: false, error: result.stderr || 'Status check failed' };
+});
+
+ipcMain.handle('git:push', async (event, projectPath, commitMessage) => {
+  const cwd = resolvePath(projectPath);
+  const message = commitMessage || `Update from Quartet - ${new Date().toLocaleString()}`;
+
+  let result = await runGit(['add', '-A'], { cwd });
+  if (!result.success) return { success: false, error: 'git add failed: ' + (result.stderr || result.error) };
+
+  result = await runGit(['commit', '-m', message], { cwd });
+  if (!result.success) {
+    if (result.stdout.includes('nothing to commit') || result.stderr.includes('nothing to commit')) {
+      return { success: true, message: 'Nothing to commit' };
+    }
+    return { success: false, error: 'git commit failed: ' + (result.stderr || result.error) };
+  }
+
+  result = await runGit(['push'], { cwd, timeout: 60000 });
+  if (result.success) {
+    return { success: true, message: result.stdout || 'Pushed successfully' };
+  }
+  return { success: false, error: 'git push failed: ' + (result.stderr || result.error) };
+});
+
+ipcMain.handle('git:pull', async (event, projectPath) => {
+  const cwd = resolvePath(projectPath);
+  const result = await runGit(['pull'], { cwd, timeout: 60000 });
+  if (result.success) {
+    return { success: true, message: result.stdout || 'Pulled successfully' };
+  }
+  return { success: false, error: result.stderr || result.error || 'Pull failed' };
 });
