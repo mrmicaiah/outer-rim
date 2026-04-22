@@ -1,1 +1,285 @@
-// Local copy of shared sync-client — electron-builder doesn't bundle sibling directories.\n// If shared/sync-client.js changes, copy it here too.\n\nconst { app: electronApp, shell } = require('electron');\nconst http = require('http');\nconst fs = require('fs');\nconst path = require('path');\n\nconst DEFAULT_WORKER_URL = 'https://micaiahs-worker.micaiah-tasks.workers.dev';\nconst SYNC_PATH_PREFIX = '/sync';\nconst DIRTY_PUSH_INTERVAL_MS = 5 * 60 * 1000;\nconst LOOPBACK_PORT_RANGE = [47800, 47900];\n\nfunction createSync(options) {\n  const {\n    appName,\n    workerUrl = process.env.OUTER_RIM_SYNC_URL || DEFAULT_WORKER_URL,\n    storePath,\n    getLocalState,\n    applyRemoteState,\n    onStatusChange = () => {},\n  } = options;\n\n  if (!appName) throw new Error('sync-client: appName required');\n  if (!storePath) throw new Error('sync-client: storePath required');\n  if (typeof getLocalState !== 'function') throw new Error('sync-client: getLocalState required');\n  if (typeof applyRemoteState !== 'function') throw new Error('sync-client: applyRemoteState required');\n\n  let syncState = loadSyncState(storePath);\n  let dirty = false;\n  let autoPushTimer = null;\n  let currentStatus = syncState.token ? 'idle' : 'signed-out';\n\n  function setStatus(status, extra = {}) {\n    currentStatus = status;\n    onStatusChange({\n      status,\n      signedIn: !!syncState.token,\n      githubLogin: syncState.githubLogin || null,\n      lastSyncedAt: syncState.lastSyncedAt || null,\n      ...extra,\n    });\n  }\n\n  function saveSyncState() {\n    try {\n      fs.mkdirSync(path.dirname(storePath), { recursive: true });\n      fs.writeFileSync(storePath, JSON.stringify(syncState, null, 2), 'utf8');\n    } catch (err) {\n      console.error('[sync] failed to save sync state:', err);\n    }\n  }\n\n  async function apiFetch(pathPart, { method = 'GET', body, extraHeaders = {} } = {}) {\n    if (!syncState.token) throw new Error('not_signed_in');\n    const resp = await fetch(`${workerUrl}${SYNC_PATH_PREFIX}${pathPart}`, {\n      method,\n      headers: {\n        Authorization: `Bearer ${syncState.token}`,\n        'Content-Type': 'application/json',\n        ...extraHeaders,\n      },\n      body: body ? JSON.stringify(body) : undefined,\n    });\n    return resp;\n  }\n\n  async function pullFromServer() {\n    setStatus('pulling');\n    const resp = await apiFetch(`/v1/state/${appName}`);\n    if (resp.status === 404) {\n      setStatus('idle');\n      return { existed: false };\n    }\n    if (resp.status === 401) {\n      syncState.token = null;\n      syncState.githubLogin = null;\n      saveSyncState();\n      setStatus('signed-out', { error: 'token_revoked' });\n      throw new Error('token_revoked');\n    }\n    if (!resp.ok) {\n      setStatus('error', { error: `pull_failed_${resp.status}` });\n      throw new Error(`pull_failed_${resp.status}`);\n    }\n    const payload = await resp.json();\n    applyRemoteState(payload.data);\n    syncState.etag = payload.etag;\n    syncState.lastSyncedAt = payload.updatedAt;\n    saveSyncState();\n    setStatus('idle');\n    return { existed: true, etag: payload.etag, updatedAt: payload.updatedAt };\n  }\n\n  async function pushToServer({ force = false } = {}) {\n    setStatus('pushing');\n    const data = await getLocalState();\n    const headers = {};\n    if (force) headers['If-Match'] = '*';\n    else if (syncState.etag) headers['If-Match'] = syncState.etag;\n    else headers['If-Match'] = '*';\n\n    const resp = await apiFetch(`/v1/state/${appName}`, {\n      method: 'PUT',\n      body: { data },\n      extraHeaders: headers,\n    });\n\n    if (resp.status === 409) {\n      const body = await resp.json().catch(() => ({}));\n      setStatus('conflict', { serverEtag: body.serverEtag, serverUpdatedAt: body.serverUpdatedAt });\n      return { conflict: true, body };\n    }\n    if (resp.status === 401) {\n      syncState.token = null;\n      syncState.githubLogin = null;\n      saveSyncState();\n      setStatus('signed-out', { error: 'token_revoked' });\n      throw new Error('token_revoked');\n    }\n    if (!resp.ok) {\n      setStatus('error', { error: `push_failed_${resp.status}` });\n      throw new Error(`push_failed_${resp.status}`);\n    }\n    const payload = await resp.json();\n    syncState.etag = payload.etag;\n    syncState.lastSyncedAt = payload.updatedAt;\n    saveSyncState();\n    dirty = false;\n    setStatus('idle');\n    return { ok: true, etag: payload.etag };\n  }\n\n  async function syncNow({ direction = 'auto' } = {}) {\n    if (!syncState.token) { setStatus('signed-out'); return { skipped: 'signed-out' }; }\n    try {\n      if (direction === 'pull' || !syncState.etag) await pullFromServer();\n      if (direction !== 'pull') {\n        const result = await pushToServer();\n        if (result.conflict) return result;\n      }\n      return { ok: true };\n    } catch (err) {\n      if (err.message === 'token_revoked') return { error: 'token_revoked' };\n      setStatus('error', { error: err.message });\n      return { error: err.message };\n    }\n  }\n\n  function markDirty() { dirty = true; }\n\n  function startAutoPushTimer() {\n    if (autoPushTimer) clearInterval(autoPushTimer);\n    autoPushTimer = setInterval(() => {\n      if (dirty && syncState.token) {\n        pushToServer().catch((err) => console.error('[sync] auto-push failed:', err));\n      }\n    }, DIRTY_PUSH_INTERVAL_MS);\n    if (autoPushTimer.unref) autoPushTimer.unref();\n  }\n\n  function wireQuitHook() {\n    electronApp.on('before-quit', async (e) => {\n      if (!dirty || !syncState.token) return;\n      e.preventDefault();\n      try {\n        await Promise.race([pushToServer(), new Promise((res) => setTimeout(res, 3000))]);\n      } catch (err) {\n        console.error('[sync] quit-time push failed:', err);\n      }\n      electronApp.exit(0);\n    });\n  }\n\n  async function signIn() {\n    if (syncState.token) return { alreadySignedIn: true, githubLogin: syncState.githubLogin };\n    const { server, port } = await openLoopbackServer();\n    const credsPromise = new Promise((resolve, reject) => {\n      const timeout = setTimeout(() => { server.close(); reject(new Error('oauth_timeout')); }, 5 * 60 * 1000);\n      server.once('sync-creds', (creds) => { clearTimeout(timeout); server.close(); resolve(creds); });\n    });\n    const startUrl = `${workerUrl}${SYNC_PATH_PREFIX}/oauth/start?app=${encodeURIComponent(appName)}&port=${port}`;\n    shell.openExternal(startUrl);\n    try {\n      const creds = await credsPromise;\n      syncState.token = creds.token;\n      syncState.githubLogin = creds.githubLogin;\n      syncState.githubUserId = creds.githubUserId;\n      syncState.etag = null;\n      syncState.lastSyncedAt = null;\n      saveSyncState();\n      setStatus('idle');\n      await syncNow({ direction: 'pull' }).catch(() => {});\n      return { ok: true, githubLogin: creds.githubLogin };\n    } catch (err) {\n      setStatus('signed-out', { error: err.message });\n      return { error: err.message };\n    }\n  }\n\n  async function signOut() {\n    syncState.token = null;\n    syncState.githubLogin = null;\n    syncState.githubUserId = null;\n    syncState.etag = null;\n    syncState.lastSyncedAt = null;\n    saveSyncState();\n    setStatus('signed-out');\n    return { ok: true };\n  }\n\n  async function init() {\n    wireQuitHook();\n    startAutoPushTimer();\n    setStatus(syncState.token ? 'idle' : 'signed-out');\n    if (syncState.token) {\n      syncNow({ direction: 'pull' }).catch((err) => console.error('[sync] startup pull failed:', err));\n    }\n  }\n\n  return {\n    init, signIn, signOut, syncNow, markDirty, pushToServer, pullFromServer,\n    getStatus: () => ({\n      status: currentStatus,\n      signedIn: !!syncState.token,\n      githubLogin: syncState.githubLogin || null,\n      lastSyncedAt: syncState.lastSyncedAt || null,\n      etag: syncState.etag || null,\n      dirty,\n    }),\n    isSignedIn: () => !!syncState.token,\n  };\n}\n\nfunction loadSyncState(storePath) {\n  try {\n    if (fs.existsSync(storePath)) {\n      const parsed = JSON.parse(fs.readFileSync(storePath, 'utf8'));\n      return {\n        token: parsed.token || null,\n        githubLogin: parsed.githubLogin || null,\n        githubUserId: parsed.githubUserId || null,\n        etag: parsed.etag || null,\n        lastSyncedAt: parsed.lastSyncedAt || null,\n      };\n    }\n  } catch (err) {\n    console.error('[sync] failed to load sync state:', err);\n  }\n  return { token: null, githubLogin: null, githubUserId: null, etag: null, lastSyncedAt: null };\n}\n\nfunction openLoopbackServer() {\n  return new Promise((resolve, reject) => {\n    const tryPort = (port) => {\n      if (port > LOOPBACK_PORT_RANGE[1]) { reject(new Error('no_free_loopback_port')); return; }\n      const server = http.createServer((req, res) => {\n        res.setHeader('Access-Control-Allow-Origin', '*');\n        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');\n        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');\n        if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }\n        if (req.method === 'POST' && req.url === '/auth') {\n          let body = '';\n          req.on('data', (chunk) => (body += chunk));\n          req.on('end', () => {\n            try {\n              const creds = JSON.parse(body);\n              if (!creds.token || !creds.githubLogin) {\n                res.writeHead(400, { 'Content-Type': 'application/json' });\n                res.end(JSON.stringify({ ok: false, error: 'incomplete_creds' }));\n                return;\n              }\n              res.writeHead(200, { 'Content-Type': 'application/json' });\n              res.end(JSON.stringify({ ok: true }));\n              server.emit('sync-creds', creds);\n            } catch {\n              res.writeHead(400, { 'Content-Type': 'application/json' });\n              res.end(JSON.stringify({ ok: false, error: 'bad_json' }));\n            }\n          });\n          return;\n        }\n        res.writeHead(404);\n        res.end('not_found');\n      });\n      server.once('error', (err) => {\n        if (err.code === 'EADDRINUSE') tryPort(port + 1);\n        else reject(err);\n      });\n      server.listen(port, '127.0.0.1', () => resolve({ server, port }));\n    };\n    tryPort(LOOPBACK_PORT_RANGE[0]);\n  });\n}\n\nmodule.exports = createSync;\n
+// Local copy of shared sync-client — electron-builder doesn't bundle sibling directories.
+// If shared/sync-client.js changes, copy it here too.
+
+const { app: electronApp, shell } = require('electron');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const DEFAULT_WORKER_URL = 'https://micaiahs-worker.micaiah-tasks.workers.dev';
+const SYNC_PATH_PREFIX = '/sync';
+const DIRTY_PUSH_INTERVAL_MS = 5 * 60 * 1000;
+const LOOPBACK_PORT_RANGE = [47800, 47900];
+
+function createSync(options) {
+  const {
+    appName,
+    workerUrl = process.env.OUTER_RIM_SYNC_URL || DEFAULT_WORKER_URL,
+    storePath,
+    getLocalState,
+    applyRemoteState,
+    onStatusChange = () => {},
+  } = options;
+
+  if (!appName) throw new Error('sync-client: appName required');
+  if (!storePath) throw new Error('sync-client: storePath required');
+  if (typeof getLocalState !== 'function') throw new Error('sync-client: getLocalState required');
+  if (typeof applyRemoteState !== 'function') throw new Error('sync-client: applyRemoteState required');
+
+  let syncState = loadSyncState(storePath);
+  let dirty = false;
+  let autoPushTimer = null;
+  let currentStatus = syncState.token ? 'idle' : 'signed-out';
+
+  function setStatus(status, extra = {}) {
+    currentStatus = status;
+    onStatusChange({
+      status,
+      signedIn: !!syncState.token,
+      githubLogin: syncState.githubLogin || null,
+      lastSyncedAt: syncState.lastSyncedAt || null,
+      ...extra,
+    });
+  }
+
+  function saveSyncState() {
+    try {
+      fs.mkdirSync(path.dirname(storePath), { recursive: true });
+      fs.writeFileSync(storePath, JSON.stringify(syncState, null, 2), 'utf8');
+    } catch (err) {
+      console.error('[sync] failed to save sync state:', err);
+    }
+  }
+
+  async function apiFetch(pathPart, { method = 'GET', body, extraHeaders = {} } = {}) {
+    if (!syncState.token) throw new Error('not_signed_in');
+    const resp = await fetch(`${workerUrl}${SYNC_PATH_PREFIX}${pathPart}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${syncState.token}`,
+        'Content-Type': 'application/json',
+        ...extraHeaders,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return resp;
+  }
+
+  async function pullFromServer() {
+    setStatus('pulling');
+    const resp = await apiFetch(`/v1/state/${appName}`);
+    if (resp.status === 404) { setStatus('idle'); return { existed: false }; }
+    if (resp.status === 401) {
+      syncState.token = null; syncState.githubLogin = null;
+      saveSyncState(); setStatus('signed-out', { error: 'token_revoked' });
+      throw new Error('token_revoked');
+    }
+    if (!resp.ok) {
+      setStatus('error', { error: `pull_failed_${resp.status}` });
+      throw new Error(`pull_failed_${resp.status}`);
+    }
+    const payload = await resp.json();
+    applyRemoteState(payload.data);
+    syncState.etag = payload.etag;
+    syncState.lastSyncedAt = payload.updatedAt;
+    saveSyncState();
+    setStatus('idle');
+    return { existed: true, etag: payload.etag, updatedAt: payload.updatedAt };
+  }
+
+  async function pushToServer({ force = false } = {}) {
+    setStatus('pushing');
+    const data = await getLocalState();
+    const headers = {};
+    if (force) headers['If-Match'] = '*';
+    else if (syncState.etag) headers['If-Match'] = syncState.etag;
+    else headers['If-Match'] = '*';
+
+    const resp = await apiFetch(`/v1/state/${appName}`, { method: 'PUT', body: { data }, extraHeaders: headers });
+
+    if (resp.status === 409) {
+      const body = await resp.json().catch(() => ({}));
+      setStatus('conflict', { serverEtag: body.serverEtag, serverUpdatedAt: body.serverUpdatedAt });
+      return { conflict: true, body };
+    }
+    if (resp.status === 401) {
+      syncState.token = null; syncState.githubLogin = null;
+      saveSyncState(); setStatus('signed-out', { error: 'token_revoked' });
+      throw new Error('token_revoked');
+    }
+    if (!resp.ok) {
+      setStatus('error', { error: `push_failed_${resp.status}` });
+      throw new Error(`push_failed_${resp.status}`);
+    }
+    const payload = await resp.json();
+    syncState.etag = payload.etag;
+    syncState.lastSyncedAt = payload.updatedAt;
+    saveSyncState();
+    dirty = false;
+    setStatus('idle');
+    return { ok: true, etag: payload.etag };
+  }
+
+  async function syncNow({ direction = 'auto' } = {}) {
+    if (!syncState.token) { setStatus('signed-out'); return { skipped: 'signed-out' }; }
+    try {
+      if (direction === 'pull' || !syncState.etag) await pullFromServer();
+      if (direction !== 'pull') {
+        const result = await pushToServer();
+        if (result.conflict) return result;
+      }
+      return { ok: true };
+    } catch (err) {
+      if (err.message === 'token_revoked') return { error: 'token_revoked' };
+      setStatus('error', { error: err.message });
+      return { error: err.message };
+    }
+  }
+
+  function markDirty() { dirty = true; }
+
+  function startAutoPushTimer() {
+    if (autoPushTimer) clearInterval(autoPushTimer);
+    autoPushTimer = setInterval(() => {
+      if (dirty && syncState.token) {
+        pushToServer().catch((err) => console.error('[sync] auto-push failed:', err));
+      }
+    }, DIRTY_PUSH_INTERVAL_MS);
+    if (autoPushTimer.unref) autoPushTimer.unref();
+  }
+
+  function wireQuitHook() {
+    electronApp.on('before-quit', async (e) => {
+      if (!dirty || !syncState.token) return;
+      e.preventDefault();
+      try {
+        await Promise.race([pushToServer(), new Promise((res) => setTimeout(res, 3000))]);
+      } catch (err) {
+        console.error('[sync] quit-time push failed:', err);
+      }
+      electronApp.exit(0);
+    });
+  }
+
+  async function signIn() {
+    if (syncState.token) return { alreadySignedIn: true, githubLogin: syncState.githubLogin };
+    const { server, port } = await openLoopbackServer();
+    const credsPromise = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => { server.close(); reject(new Error('oauth_timeout')); }, 5 * 60 * 1000);
+      server.once('sync-creds', (creds) => { clearTimeout(timeout); server.close(); resolve(creds); });
+    });
+    const startUrl = `${workerUrl}${SYNC_PATH_PREFIX}/oauth/start?app=${encodeURIComponent(appName)}&port=${port}`;
+    shell.openExternal(startUrl);
+    try {
+      const creds = await credsPromise;
+      syncState.token = creds.token;
+      syncState.githubLogin = creds.githubLogin;
+      syncState.githubUserId = creds.githubUserId;
+      syncState.etag = null;
+      syncState.lastSyncedAt = null;
+      saveSyncState();
+      setStatus('idle');
+      await syncNow({ direction: 'pull' }).catch(() => {});
+      return { ok: true, githubLogin: creds.githubLogin };
+    } catch (err) {
+      setStatus('signed-out', { error: err.message });
+      return { error: err.message };
+    }
+  }
+
+  async function signOut() {
+    syncState.token = null;
+    syncState.githubLogin = null;
+    syncState.githubUserId = null;
+    syncState.etag = null;
+    syncState.lastSyncedAt = null;
+    saveSyncState();
+    setStatus('signed-out');
+    return { ok: true };
+  }
+
+  async function init() {
+    wireQuitHook();
+    startAutoPushTimer();
+    setStatus(syncState.token ? 'idle' : 'signed-out');
+    if (syncState.token) {
+      syncNow({ direction: 'pull' }).catch((err) => console.error('[sync] startup pull failed:', err));
+    }
+  }
+
+  return {
+    init, signIn, signOut, syncNow, markDirty, pushToServer, pullFromServer,
+    getStatus: () => ({
+      status: currentStatus,
+      signedIn: !!syncState.token,
+      githubLogin: syncState.githubLogin || null,
+      lastSyncedAt: syncState.lastSyncedAt || null,
+      etag: syncState.etag || null,
+      dirty,
+    }),
+    isSignedIn: () => !!syncState.token,
+  };
+}
+
+function loadSyncState(storePath) {
+  try {
+    if (fs.existsSync(storePath)) {
+      const parsed = JSON.parse(fs.readFileSync(storePath, 'utf8'));
+      return {
+        token: parsed.token || null,
+        githubLogin: parsed.githubLogin || null,
+        githubUserId: parsed.githubUserId || null,
+        etag: parsed.etag || null,
+        lastSyncedAt: parsed.lastSyncedAt || null,
+      };
+    }
+  } catch (err) {
+    console.error('[sync] failed to load sync state:', err);
+  }
+  return { token: null, githubLogin: null, githubUserId: null, etag: null, lastSyncedAt: null };
+}
+
+function openLoopbackServer() {
+  return new Promise((resolve, reject) => {
+    const tryPort = (port) => {
+      if (port > LOOPBACK_PORT_RANGE[1]) { reject(new Error('no_free_loopback_port')); return; }
+      const server = http.createServer((req, res) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+        if (req.method === 'POST' && req.url === '/auth') {
+          let body = '';
+          req.on('data', (chunk) => (body += chunk));
+          req.on('end', () => {
+            try {
+              const creds = JSON.parse(body);
+              if (!creds.token || !creds.githubLogin) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ok: false, error: 'incomplete_creds' }));
+                return;
+              }
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: true }));
+              server.emit('sync-creds', creds);
+            } catch {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: false, error: 'bad_json' }));
+            }
+          });
+          return;
+        }
+        res.writeHead(404);
+        res.end('not_found');
+      });
+      server.once('error', (err) => {
+        if (err.code === 'EADDRINUSE') tryPort(port + 1);
+        else reject(err);
+      });
+      server.listen(port, '127.0.0.1', () => resolve({ server, port }));
+    };
+    tryPort(LOOPBACK_PORT_RANGE[0]);
+  });
+}
+
+module.exports = createSync;
