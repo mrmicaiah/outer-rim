@@ -7,10 +7,9 @@
 //   const createSync = require('../../../shared/sync-client');
 //   const sync = createSync({
 //     appName: 'quartet',
-//     workerUrl: 'https://outer-rim-sync.YOUR.workers.dev',
 //     storePath: '/Users/.../quartet/sync.json',
-//     getLocalState: () => store.getAll(),      // returns the full JSON blob to sync
-//     applyRemoteState: (data) => store.replaceAll(data),  // merge/replace remote state
+//     getLocalState: () => store.getAll(),
+//     applyRemoteState: (data) => store.replaceAll(data),
 //     onStatusChange: (status) => mainWindow.webContents.send('sync:status', status),
 //   });
 //
@@ -28,9 +27,11 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_WORKER_URL = 'https://outer-rim-sync.example.workers.dev';
+// Sync lives under /sync/* on the shared worker alongside MCP and Siri endpoints.
+const DEFAULT_WORKER_URL = 'https://micaiahs-worker.micaiah-tasks.workers.dev';
+const SYNC_PATH_PREFIX = '/sync';
 const DIRTY_PUSH_INTERVAL_MS = 5 * 60 * 1000;   // 5 min
-const LOOPBACK_PORT_RANGE = [47800, 47900];      // try ports in this range for OAuth callback
+const LOOPBACK_PORT_RANGE = [47800, 47900];     // OAuth callback loopback ports
 
 function createSync(options) {
   const {
@@ -75,7 +76,7 @@ function createSync(options) {
 
   async function apiFetch(pathPart, { method = 'GET', body, extraHeaders = {} } = {}) {
     if (!syncState.token) throw new Error('not_signed_in');
-    const resp = await fetch(`${workerUrl}${pathPart}`, {
+    const resp = await fetch(`${workerUrl}${SYNC_PATH_PREFIX}${pathPart}`, {
       method,
       headers: {
         Authorization: `Bearer ${syncState.token}`,
@@ -124,7 +125,6 @@ function createSync(options) {
     } else if (syncState.etag) {
       headers['If-Match'] = syncState.etag;
     } else {
-      // No etag yet — first push. Use * so the server accepts a create.
       headers['If-Match'] = '*';
     }
 
@@ -135,7 +135,6 @@ function createSync(options) {
     });
 
     if (resp.status === 409) {
-      // Conflict — somebody else pushed newer data.
       const body = await resp.json().catch(() => ({}));
       setStatus('conflict', {
         serverEtag: body.serverEtag,
@@ -163,8 +162,6 @@ function createSync(options) {
     return { ok: true, etag: payload.etag };
   }
 
-  // Full round trip — pull first if we don't have an etag OR if caller wants a clean sync;
-  // otherwise push optimistically and handle 409.
   async function syncNow({ direction = 'auto' } = {}) {
     if (!syncState.token) {
       setStatus('signed-out');
@@ -227,8 +224,7 @@ function createSync(options) {
   }
 
   // ============================================
-  // OAuth flow — spin up a loopback server, open the Worker's /oauth/start,
-  // wait for the browser to POST the token back to our server.
+  // OAuth flow
   // ============================================
 
   async function signIn() {
@@ -250,7 +246,7 @@ function createSync(options) {
       });
     });
 
-    const startUrl = `${workerUrl}/oauth/start?app=${encodeURIComponent(appName)}&port=${port}`;
+    const startUrl = `${workerUrl}${SYNC_PATH_PREFIX}/oauth/start?app=${encodeURIComponent(appName)}&port=${port}`;
     shell.openExternal(startUrl);
 
     try {
@@ -346,7 +342,6 @@ function openLoopbackServer() {
         return;
       }
       const server = http.createServer((req, res) => {
-        // Basic CORS for the Worker-origin fetch.
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
