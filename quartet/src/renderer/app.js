@@ -1,6 +1,6 @@
 // ============================================
 // QUARTET - Four-Pane Browser for Parallel Workstreams
-// with Git sidebar (left) + Notepad (right)
+// with Git sidebar (left) + Notepad (right) + Cloud Sync
 // ============================================
 
 function uuidv4() {
@@ -13,10 +13,8 @@ let activeWorkspace = null;
 let profiles = [];
 let focusedPane = 'topLeft';
 
-// Track which webviews have been created
 const createdWebviews = new Set();
 
-// Resizer state
 let currentResizer = null;
 let resizeOverlay = null;
 
@@ -40,7 +38,6 @@ const tabModalOverlay = document.getElementById('tab-modal-overlay');
 const tabUrlInput = document.getElementById('tab-url-input');
 const profileModalOverlay = document.getElementById('profile-modal-overlay');
 
-// Modal transient state
 let pendingTabPaneId = 'topLeft';
 
 const PANES = ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'];
@@ -84,6 +81,7 @@ async function init() {
   updateEmptyState();
   setFocusedPane('topLeft');
   setupEventListeners();
+  initSync();
 
   window.quartet.onMenuToggleDevTools((event, pane) => {
     toggleWebviewDevTools(pane || focusedPane);
@@ -113,7 +111,6 @@ function migrateWorkspaceStructure(workspace) {
     return;
   }
 
-  // Migration from older 2-pane Parallel-style shape {left, right} → 4-pane
   if (workspace.panes.left && !workspace.panes.topLeft) {
     workspace.panes.topLeft = workspace.panes.left;
     delete workspace.panes.left;
@@ -179,7 +176,7 @@ function setFocusedPane(paneId) {
 }
 
 // ============================================
-// SIDEBAR - Workspace display, Folder, Git
+// SIDEBAR
 // ============================================
 
 function updateSidebar() {
@@ -252,7 +249,6 @@ async function checkGitStatus() {
 
 async function gitPush() {
   if (!activeWorkspace?.folderPath) return;
-
   const btn = document.getElementById('git-push-btn');
   const statusText = document.querySelector('#git-status-display .git-status-text');
   const commitInput = document.getElementById('commit-message');
@@ -274,14 +270,12 @@ async function gitPush() {
   } catch (err) {
     statusText.textContent = '✗ ' + err.message;
   }
-
   btn.disabled = false;
   btn.querySelector('.btn-text').textContent = 'Push';
 }
 
 async function gitPull() {
   if (!activeWorkspace?.folderPath) return;
-
   const btn = document.getElementById('git-pull-btn');
   const statusText = document.querySelector('#git-status-display .git-status-text');
 
@@ -300,7 +294,6 @@ async function gitPull() {
   } catch (err) {
     statusText.textContent = '✗ ' + err.message;
   }
-
   btn.disabled = false;
   btn.querySelector('.btn-text').textContent = 'Pull';
 }
@@ -322,6 +315,127 @@ function toggleSidebar() {
 function expandSidebar() {
   sidebar.classList.remove('collapsed');
   sidebarExpand.classList.add('hidden');
+}
+
+// ============================================
+// CLOUD SYNC (renderer side)
+// ============================================
+
+function formatRelative(iso) {
+  if (!iso) return 'Never synced';
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const sec = Math.round((now - then) / 1000);
+  if (sec < 60) return `Synced ${sec}s ago`;
+  if (sec < 3600) return `Synced ${Math.round(sec / 60)}m ago`;
+  if (sec < 86400) return `Synced ${Math.round(sec / 3600)}h ago`;
+  return `Synced ${Math.round(sec / 86400)}d ago`;
+}
+
+function updateSyncUI(status) {
+  const badge = document.getElementById('sync-status-badge');
+  const signedOut = document.getElementById('sync-signed-out');
+  const signedIn = document.getElementById('sync-signed-in');
+  const accountName = document.getElementById('sync-account-name');
+  const lastSyncedText = document.getElementById('sync-last-synced-text');
+  const conflictBanner = document.getElementById('sync-conflict-banner');
+
+  badge.className = 'status-badge ' + (status.status || 'signed-out');
+  const badgeText = {
+    idle: 'Synced',
+    pushing: 'Pushing',
+    pulling: 'Pulling',
+    conflict: 'Conflict',
+    error: 'Error',
+    'signed-out': 'Off',
+  }[status.status] || '…';
+  badge.textContent = badgeText;
+
+  if (status.signedIn) {
+    signedOut.classList.add('hidden');
+    signedIn.classList.remove('hidden');
+    accountName.textContent = '@' + (status.githubLogin || 'user');
+    lastSyncedText.textContent = formatRelative(status.lastSyncedAt);
+    conflictBanner.classList.toggle('hidden', status.status !== 'conflict');
+  } else {
+    signedOut.classList.remove('hidden');
+    signedIn.classList.add('hidden');
+  }
+}
+
+async function reloadFromStore() {
+  workspaces = await window.quartet.workspace.getAll();
+  const active = await window.quartet.workspace.getActive();
+  if (active) activeWorkspace = workspaces.find(w => w.id === active.id);
+  profiles = await window.quartet.profiles.getAll();
+  if (activeWorkspace) migrateWorkspaceStructure(activeWorkspace);
+
+  document.querySelectorAll('.pane-webview-container webview').forEach(wv => wv.remove());
+  createdWebviews.clear();
+
+  updateProfileSelectors();
+  renderWorkspaces();
+  PANES.forEach(p => renderPane(p));
+  updateNotepad();
+  updateSidebar();
+  updateEmptyState();
+}
+
+async function initSync() {
+  const status = await window.quartet.sync.getStatus();
+  updateSyncUI(status);
+
+  window.quartet.sync.onStatus((status) => updateSyncUI(status));
+  window.quartet.sync.onRemoteApplied(() => reloadFromStore());
+
+  document.getElementById('sync-signin-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('sync-signin-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="btn-icon">⏳</span> Waiting for browser…';
+    try {
+      const result = await window.quartet.sync.signIn();
+      if (result.error) {
+        alert('Sign-in failed: ' + result.error);
+      } else if (result.ok || result.alreadySignedIn) {
+        await reloadFromStore();
+      }
+    } catch (err) {
+      alert('Sign-in error: ' + err.message);
+    }
+    btn.disabled = false;
+    btn.innerHTML = '<span class="btn-icon">🔑</span> Sign in with GitHub';
+  });
+
+  document.getElementById('sync-signout-btn').addEventListener('click', async () => {
+    if (!confirm('Sign out of cloud sync? Your local data stays, but will stop syncing.')) return;
+    await window.quartet.sync.signOut();
+  });
+
+  document.getElementById('sync-now-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('sync-now-btn');
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = '⏳ Syncing…';
+    try {
+      await window.quartet.sync.syncNow({ direction: 'pull' });
+      await window.quartet.sync.syncNow({});
+    } catch (err) {
+      console.error('[sync] syncNow failed', err);
+    }
+    btn.disabled = false;
+    btn.textContent = original;
+  });
+
+  document.getElementById('sync-pull-force-btn').addEventListener('click', async () => {
+    if (!confirm('This will overwrite your local state with the cloud copy. Continue?')) return;
+    await window.quartet.sync.pullForce();
+    await reloadFromStore();
+  });
+
+  document.getElementById('sync-push-force-btn').addEventListener('click', async () => {
+    if (!confirm('This will overwrite the cloud copy with your local state. Continue?')) return;
+    await window.quartet.sync.pushForce();
+  });
 }
 
 // ============================================
@@ -446,7 +560,6 @@ function handleMouseMove(e) {
     const newRight = startTopRightWidth - delta;
 
     if (newLeft >= 250 && newRight >= 250) {
-      // Mirror widths across both rows
       for (const el of [topLeft, bottomLeft]) {
         el.style.width = newLeft + 'px';
         el.style.flex = 'none';
@@ -1117,7 +1230,6 @@ function setupEventListeners() {
   document.addEventListener('mousemove', handleMouseMove);
   document.addEventListener('mouseup', stopResize);
 
-  // Focused pane tracking — click inside any pane to make it focused
   PANES.forEach(paneId => {
     const paneEl = document.getElementById(`${paneId}-pane`);
     if (paneEl) {
@@ -1178,7 +1290,7 @@ function setupEventListeners() {
   notepadToggle.addEventListener('click', toggleNotepad);
   notepadExpand.addEventListener('click', expandNotepad);
 
-  // Vertical resizers — both slaved to same action
+  // Vertical resizers
   document.querySelectorAll('.pane-vertical-resizer').forEach(resizer => {
     resizer.addEventListener('mousedown', (e) => {
       startResize('vertical', e, {
@@ -1241,7 +1353,6 @@ function setupEventListeners() {
       nav?.focus();
       nav?.select();
     }
-    // Cmd+1-9 switch tabs within focused pane (but NOT Cmd+Shift+1-4, which is per-pane DevTools)
     if ((e.metaKey || e.ctrlKey) && /^[1-9]$/.test(e.key) && !e.shiftKey) {
       const pd = getPaneData(focusedPane);
       if (pd?.tabs?.length) {
