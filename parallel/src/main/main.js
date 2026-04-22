@@ -4,13 +4,15 @@ const fs = require('fs');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
 const Store = require('./store');
+const createSync = require('./sync-client');
 
 const store = new Store();
 
 let mainWindow;
+let sync = null;
 
 // ============================================
-// GIT HELPERS (same pattern as Outer Rim / Perimeter)
+// GIT HELPERS
 // ============================================
 
 function findGitPath() {
@@ -92,6 +94,36 @@ function initializeProfiles() {
     store.set('profiles', [{ id: 'default', name: 'Default', createdAt: new Date().toISOString() }]);
   }
 }
+
+// ============================================
+// Cloud sync wiring
+// ============================================
+
+function initializeSync() {
+  const syncStatePath = path.join(app.getPath('userData'), 'parallel-sync.json');
+
+  sync = createSync({
+    appName: 'parallel',
+    storePath: syncStatePath,
+    workerUrl: process.env.OUTER_RIM_SYNC_URL,
+    getLocalState: () => store.getAll(),
+    applyRemoteState: (data) => {
+      store.replaceAll(data);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:remote-applied');
+      }
+    },
+    onStatusChange: (status) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:status', status);
+      }
+    },
+  });
+
+  sync.init();
+}
+
+function markDirty() { if (sync) sync.markDirty(); }
 
 function createAppMenu() {
   const template = [
@@ -175,6 +207,7 @@ function createAppMenu() {
 app.whenReady().then(() => {
   createAppMenu();
   createWindow();
+  initializeSync();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -197,7 +230,7 @@ ipcMain.handle('devtools:openWebview', (event, pane) => {
 });
 
 // ============================================
-// WORKSPACE IPC HANDLERS
+// WORKSPACE IPC (mutations mark sync dirty)
 // ============================================
 
 ipcMain.handle('workspace:getAll', () => store.get('workspaces') || []);
@@ -213,6 +246,7 @@ ipcMain.handle('workspace:create', (event, workspace) => {
   workspaces.push(workspace);
   store.set('workspaces', workspaces);
   store.set('activeWorkspaceId', workspace.id);
+  markDirty();
   return workspace;
 });
 
@@ -224,6 +258,7 @@ ipcMain.handle('workspace:update', (event, workspace) => {
     workspaces[index] = workspace;
     store.set('workspaces', workspaces);
   }
+  markDirty();
   return workspace;
 });
 
@@ -234,16 +269,18 @@ ipcMain.handle('workspace:delete', (event, id) => {
   if (store.get('activeWorkspaceId') === id) {
     store.set('activeWorkspaceId', workspaces[0]?.id || null);
   }
+  markDirty();
   return workspaces;
 });
 
 ipcMain.handle('workspace:setActive', (event, id) => {
   store.set('activeWorkspaceId', id);
+  markDirty();
   return id;
 });
 
 // ============================================
-// NOTES IPC HANDLERS
+// NOTES IPC
 // ============================================
 
 ipcMain.handle('notes:update', (event, workspaceId, notes) => {
@@ -254,11 +291,12 @@ ipcMain.handle('notes:update', (event, workspaceId, notes) => {
     workspace.updatedAt = new Date().toISOString();
     store.set('workspaces', workspaces);
   }
+  markDirty();
   return notes;
 });
 
 // ============================================
-// PROFILES IPC HANDLERS
+// PROFILES IPC
 // ============================================
 
 ipcMain.handle('profiles:getAll', () => {
@@ -273,6 +311,7 @@ ipcMain.handle('profiles:create', (event, name) => {
   const profile = { id: uniqueId, name, createdAt: new Date().toISOString() };
   profiles.push(profile);
   store.set('profiles', profiles);
+  markDirty();
   return profile;
 });
 
@@ -282,6 +321,7 @@ ipcMain.handle('profiles:delete', (event, id) => {
   profiles = profiles.filter(p => p.id !== id);
   store.set('profiles', profiles);
   try { session.fromPartition(`persist:profile-${id}`).clearStorageData(); } catch (e) {}
+  markDirty();
   return profiles;
 });
 
@@ -289,6 +329,7 @@ ipcMain.handle('profiles:rename', (event, id, name) => {
   const profiles = store.get('profiles') || [];
   const profile = profiles.find(p => p.id === id);
   if (profile) { profile.name = name; store.set('profiles', profiles); }
+  markDirty();
   return profiles;
 });
 
@@ -366,4 +407,37 @@ ipcMain.handle('git:pull', async (event, projectPath) => {
     return { success: true, message: result.stdout || 'Pulled successfully' };
   }
   return { success: false, error: result.stderr || result.error || 'Pull failed' };
+});
+
+// ============================================
+// CLOUD SYNC IPC
+// ============================================
+
+ipcMain.handle('sync:getStatus', () => {
+  return sync ? sync.getStatus() : { status: 'signed-out', signedIn: false };
+});
+
+ipcMain.handle('sync:signIn', async () => {
+  if (!sync) return { error: 'sync_not_ready' };
+  return await sync.signIn();
+});
+
+ipcMain.handle('sync:signOut', async () => {
+  if (!sync) return { error: 'sync_not_ready' };
+  return await sync.signOut();
+});
+
+ipcMain.handle('sync:syncNow', async (event, { direction } = {}) => {
+  if (!sync) return { error: 'sync_not_ready' };
+  return await sync.syncNow({ direction });
+});
+
+ipcMain.handle('sync:pushForce', async () => {
+  if (!sync) return { error: 'sync_not_ready' };
+  return await sync.pushToServer({ force: true });
+});
+
+ipcMain.handle('sync:pullForce', async () => {
+  if (!sync) return { error: 'sync_not_ready' };
+  return await sync.pullFromServer();
 });
