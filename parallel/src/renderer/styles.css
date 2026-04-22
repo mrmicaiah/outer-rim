@@ -121,7 +121,8 @@ body {
 }
 
 /* ============================================
-   LEFT SIDEBAR - Dark (Workspace + Folder + Git)
+   LEFT SIDEBAR - Dark (Workspace + Folder + Git + Sync)
+   Scrollable because it can get tall with sync added.
    ============================================ */
 
 .sidebar-pane {
@@ -132,7 +133,8 @@ body {
   flex-direction: column;
   background: var(--dark-bg-secondary);
   border-right: 1px solid var(--dark-border);
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   flex-shrink: 0;
   position: relative;
 }
@@ -383,6 +385,54 @@ body {
   background: var(--dark-bg-hover);
   color: var(--dark-text-secondary);
 }
+
+/* ============================================
+   CLOUD SYNC SECTION
+   ============================================ */
+
+#sync-section .sync-desc {
+  font-size: 12px;
+  color: var(--dark-text-secondary);
+  margin: 8px 0;
+  line-height: 1.4;
+}
+.signin-btn {
+  width: 100%;
+  justify-content: center;
+  background: var(--accent-purple);
+  color: white;
+}
+.signin-btn:hover { background: var(--accent-purple-hover); }
+.sync-account-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.sync-account-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--dark-text);
+}
+.sync-conflict-banner {
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--warning-bg);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+}
+.sync-conflict-banner p {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: var(--warning);
+}
+.status-badge.idle { background: var(--success-bg); color: var(--success); }
+.status-badge.pushing, .status-badge.pulling { background: rgba(59,130,246,0.15); color: var(--accent-blue); }
+.status-badge.conflict { background: var(--warning-bg); color: var(--warning); }
+.status-badge.error { background: var(--danger-bg); color: var(--danger); }
+.status-badge.signed-out { background: rgba(107,114,128,0.2); color: var(--dark-text-secondary); }
+#sync-signed-out.hidden, #sync-signed-in.hidden, #sync-conflict-banner.hidden { display: none; }
+#sync-now-btn { margin-top: 8px; }
 
 /* ============================================
    BROWSER PANES - Dark toolbar, light content
@@ -1111,3 +1161,6 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--dark-border); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--dark-text-muted); }
+
+/* .hidden utility */
+.hidden { display: none !important; }
