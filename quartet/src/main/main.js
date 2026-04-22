@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
 const Store = require('./store');
-const createSync = require('../../../shared/sync-client');
+const createSync = require('./sync-client');
 
 const store = new Store();
 
