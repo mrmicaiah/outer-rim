@@ -1,0 +1,20 @@
+# Wrangler config for Outer Rim sync Worker.
+# After `wrangler kv:namespace create SYNC_KV`, paste the id below.
+
+name = "outer-rim-sync"
+main = "src/index.js"
+compatibility_date = "2024-10-01"
+
+# Update this after creating the namespace.
+[[kv_namespaces]]
+binding = "SYNC_KV"
+id = "REPLACE_WITH_KV_ID"
+
+# Secrets (set with `wrangler secret put`):
+#   GITHUB_CLIENT_ID
+#   GITHUB_CLIENT_SECRET
+#   TOKEN_SIGNING_KEY   (random long string, any format — used as entropy, not HMAC'd)
+
+[vars]
+# Comma-separated list of valid app names. Used to validate path params.
+VALID_APPS = "outer-rim,parallel,perimeter,quartet"
