@@ -61,10 +61,6 @@ body {
   height: 100vh;
 }
 
-/* ============================================
-   TITLE BAR
-   ============================================ */
-
 #title-bar {
   height: var(--title-bar-height);
   background: var(--dark-bg);
@@ -84,10 +80,6 @@ body {
   letter-spacing: 0.5px;
 }
 
-/* ============================================
-   MAIN LAYOUT
-   ============================================ */
-
 #main-content {
   flex: 1;
   display: flex;
@@ -102,7 +94,6 @@ body {
   min-height: 400px;
 }
 
-/* OUTER container: horizontal flex — [sidebar] [grid-wrapper] [notepad-resizer] [notepad] */
 #quad-pane-container {
   flex: 1;
   display: flex;
@@ -113,7 +104,6 @@ body {
   position: relative;
 }
 
-/* GRID WRAPPER: column flex — this is where the 2x2 grid lives */
 #grid-wrapper {
   flex: 1;
   display: flex;
@@ -123,7 +113,6 @@ body {
   min-width: 0;
 }
 
-/* Each row is a horizontal flex container holding two panes + a resizer */
 .pane-row {
   flex: 1;
   display: flex;
@@ -133,7 +122,7 @@ body {
 }
 
 /* ============================================
-   LEFT SIDEBAR - Dark (Workspace + Folder + Git)
+   LEFT SIDEBAR
    ============================================ */
 
 .sidebar-pane {
@@ -144,7 +133,8 @@ body {
   flex-direction: column;
   background: var(--dark-bg-secondary);
   border-right: 1px solid var(--dark-border);
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   flex-shrink: 0;
   position: relative;
 }
@@ -397,6 +387,102 @@ body {
 }
 
 /* ============================================
+   CLOUD SYNC SECTION (in sidebar)
+   ============================================ */
+
+.sync-state { display: block; }
+.sync-state.hidden { display: none; }
+
+.status-badge.idle { background: var(--success-bg); color: var(--success); }
+.status-badge.pushing,
+.status-badge.pulling { background: rgba(59, 130, 246, 0.15); color: var(--accent-blue); }
+.status-badge.conflict { background: var(--warning-bg); color: var(--warning); }
+.status-badge.signed-out { background: rgba(160, 160, 168, 0.15); color: var(--dark-text-secondary); }
+
+.sync-desc {
+  font-size: 12px;
+  color: var(--dark-text-secondary);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.sync-signin-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.sync-signin-btn .btn-icon { font-size: 14px; }
+
+.sync-account {
+  padding: 10px 12px;
+  background: var(--dark-bg);
+  border: 1px solid var(--dark-border);
+  border-radius: var(--radius);
+  margin-bottom: 10px;
+}
+
+.sync-account-label {
+  display: block;
+  font-size: 10px;
+  color: var(--dark-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+
+.sync-account-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dark-text);
+}
+
+.sync-last-synced {
+  font-size: 11px;
+  color: var(--dark-text-muted);
+  margin-bottom: 10px;
+}
+
+.sync-conflict-banner {
+  background: var(--warning-bg);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.sync-conflict-banner.hidden { display: none; }
+
+.sync-conflict-banner p {
+  font-size: 12px;
+  color: var(--warning);
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+.sync-conflict-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.action-btn-danger {
+  background: var(--danger);
+  font-size: 11px;
+  padding: 8px 10px;
+}
+
+.action-btn-danger:hover { background: #dc2626; }
+
+.sync-signout-btn {
+  margin-top: 6px;
+  font-size: 10px;
+}
+
+/* ============================================
    BROWSER PANES
    ============================================ */
 
@@ -458,9 +544,7 @@ body {
   border-color: var(--accent-blue);
 }
 
-.pane-tab-item.active .pane-tab-title {
-  color: white;
-}
+.pane-tab-item.active .pane-tab-title { color: white; }
 
 .pane-tab-favicon {
   width: 14px;
@@ -516,9 +600,7 @@ body {
   transition: all var(--transition);
 }
 
-.pane-add-tab:hover {
-  background: var(--accent-purple-hover);
-}
+.pane-add-tab:hover { background: var(--accent-purple-hover); }
 
 .pane-profile-selector {
   display: flex;
@@ -544,9 +626,7 @@ body {
 }
 
 .profile-select:hover,
-.profile-select:focus {
-  border-color: var(--accent-orange);
-}
+.profile-select:focus { border-color: var(--accent-orange); }
 
 .profile-manage-btn {
   background: var(--accent-orange);
@@ -559,9 +639,7 @@ body {
   transition: all var(--transition);
 }
 
-.profile-manage-btn:hover {
-  background: #ea580c;
-}
+.profile-manage-btn:hover { background: #ea580c; }
 
 .pane-nav-bar {
   height: var(--pane-nav-height);
@@ -594,10 +672,7 @@ body {
   color: white;
 }
 
-.nav-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
+.nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
 .nav-url {
   flex: 1;
@@ -646,7 +721,7 @@ body {
 }
 
 /* ============================================
-   GRID RESIZERS (inside grid-wrapper)
+   GRID RESIZERS
    ============================================ */
 
 .pane-vertical-resizer {
@@ -657,9 +732,7 @@ body {
   transition: background var(--transition);
 }
 
-.pane-vertical-resizer:hover {
-  background: var(--accent-blue);
-}
+.pane-vertical-resizer:hover { background: var(--accent-blue); }
 
 #row-resizer {
   height: 4px;
@@ -669,12 +742,10 @@ body {
   transition: background var(--transition);
 }
 
-#row-resizer:hover {
-  background: var(--accent-blue);
-}
+#row-resizer:hover { background: var(--accent-blue); }
 
 /* ============================================
-   NOTEPAD PANEL (right side)
+   NOTEPAD PANEL
    ============================================ */
 
 #notepad-resizer {
@@ -685,9 +756,7 @@ body {
   transition: background var(--transition);
 }
 
-#notepad-resizer:hover {
-  background: var(--accent-blue);
-}
+#notepad-resizer:hover { background: var(--accent-blue); }
 
 #notepad-panel {
   width: var(--notepad-width);
@@ -773,11 +842,7 @@ body {
   z-index: 10;
 }
 
-#notepad-expand:hover {
-  background: var(--accent-blue);
-  color: white;
-}
-
+#notepad-expand:hover { background: var(--accent-blue); color: white; }
 #notepad-expand.hidden { display: none; }
 
 /* ============================================
@@ -816,18 +881,14 @@ body {
   white-space: nowrap;
 }
 
-.workspace-item:hover {
-  border-color: var(--accent-blue);
-}
+.workspace-item:hover { border-color: var(--accent-blue); }
 
 .workspace-item.active {
   background: var(--accent-blue);
   border-color: var(--accent-blue);
 }
 
-.workspace-item.active .workspace-name {
-  color: white;
-}
+.workspace-item.active .workspace-name { color: white; }
 
 .workspace-name {
   font-size: 13px;
@@ -848,18 +909,10 @@ body {
   font-size: 12px;
 }
 
-.workspace-action-btn:hover {
-  color: var(--light-text);
-}
+.workspace-action-btn:hover { color: var(--light-text); }
 
-.workspace-item.active .workspace-action-btn {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.workspace-item.active .workspace-action-btn:hover {
-  color: white;
-}
-
+.workspace-item.active .workspace-action-btn { color: rgba(255, 255, 255, 0.8); }
+.workspace-item.active .workspace-action-btn:hover { color: white; }
 .workspace-action-btn.delete:hover { color: var(--danger); }
 
 .workspace-add-btn {
@@ -929,9 +982,7 @@ body {
   font-weight: 700;
 }
 
-#empty-state-overlay button:hover {
-  background: var(--accent-blue-hover);
-}
+#empty-state-overlay button:hover { background: var(--accent-blue-hover); }
 
 #modal-overlay,
 #tab-modal-overlay,
@@ -950,9 +1001,7 @@ body {
 
 #modal-overlay.hidden,
 #tab-modal-overlay.hidden,
-#profile-modal-overlay.hidden {
-  display: none;
-}
+#profile-modal-overlay.hidden { display: none; }
 
 #modal,
 #tab-modal,
@@ -991,9 +1040,7 @@ body {
 
 #modal input:focus,
 #tab-modal input:focus,
-#profile-modal input:focus {
-  border-color: var(--accent-blue);
-}
+#profile-modal input:focus { border-color: var(--accent-blue); }
 
 .quick-links {
   display: flex;
@@ -1038,9 +1085,7 @@ body {
   transition: all var(--transition);
 }
 
-.btn-secondary:hover {
-  background: var(--light-bg-secondary);
-}
+.btn-secondary:hover { background: var(--light-bg-secondary); }
 
 .btn-primary {
   padding: 12px 20px;
@@ -1053,9 +1098,7 @@ body {
   font-weight: 700;
 }
 
-.btn-primary:hover {
-  background: var(--accent-blue-hover);
-}
+.btn-primary:hover { background: var(--accent-blue-hover); }
 
 .btn-danger {
   padding: 12px 20px;
@@ -1068,9 +1111,7 @@ body {
   font-weight: 700;
 }
 
-.btn-danger:hover {
-  background: #dc2626;
-}
+.btn-danger:hover { background: #dc2626; }
 
 .profile-modal-desc {
   font-size: 13px;
@@ -1113,10 +1154,7 @@ body {
   border-radius: 4px;
 }
 
-.profile-item-actions button:hover {
-  color: var(--light-text);
-}
-
+.profile-item-actions button:hover { color: var(--light-text); }
 .profile-item-actions button.delete:hover { color: var(--danger); }
 
 .profile-add-row {
