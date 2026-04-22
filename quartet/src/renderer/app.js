@@ -81,11 +81,15 @@ async function init() {
   updateEmptyState();
   setFocusedPane('topLeft');
   setupEventListeners();
-  initSync();
 
+  // Menu-driven DevTools work even when a webview has keyboard focus
+  // (keydown events inside a webview don't bubble to document).
   window.quartet.onMenuToggleDevTools((event, pane) => {
     toggleWebviewDevTools(pane || focusedPane);
   });
+
+  // Fire-and-forget — don't let sync errors block the rest of the UI.
+  initSync().catch((err) => console.error('[sync] initSync failed:', err));
 }
 
 // ============================================
@@ -340,6 +344,8 @@ function updateSyncUI(status) {
   const lastSyncedText = document.getElementById('sync-last-synced-text');
   const conflictBanner = document.getElementById('sync-conflict-banner');
 
+  if (!badge || !signedOut || !signedIn) return; // sidebar DOM missing — bail
+
   badge.className = 'status-badge ' + (status.status || 'signed-out');
   const badgeText = {
     idle: 'Synced',
@@ -354,9 +360,9 @@ function updateSyncUI(status) {
   if (status.signedIn) {
     signedOut.classList.add('hidden');
     signedIn.classList.remove('hidden');
-    accountName.textContent = '@' + (status.githubLogin || 'user');
-    lastSyncedText.textContent = formatRelative(status.lastSyncedAt);
-    conflictBanner.classList.toggle('hidden', status.status !== 'conflict');
+    if (accountName) accountName.textContent = '@' + (status.githubLogin || 'user');
+    if (lastSyncedText) lastSyncedText.textContent = formatRelative(status.lastSyncedAt);
+    if (conflictBanner) conflictBanner.classList.toggle('hidden', status.status !== 'conflict');
   } else {
     signedOut.classList.remove('hidden');
     signedIn.classList.add('hidden');
@@ -388,10 +394,10 @@ async function initSync() {
   window.quartet.sync.onStatus((status) => updateSyncUI(status));
   window.quartet.sync.onRemoteApplied(() => reloadFromStore());
 
-  document.getElementById('sync-signin-btn').addEventListener('click', async () => {
-    const btn = document.getElementById('sync-signin-btn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="btn-icon">⏳</span> Waiting for browser…';
+  const signinBtn = document.getElementById('sync-signin-btn');
+  if (signinBtn) signinBtn.addEventListener('click', async () => {
+    signinBtn.disabled = true;
+    signinBtn.innerHTML = '<span class="btn-icon">⏳</span> Waiting for browser…';
     try {
       const result = await window.quartet.sync.signIn();
       if (result.error) {
@@ -402,37 +408,40 @@ async function initSync() {
     } catch (err) {
       alert('Sign-in error: ' + err.message);
     }
-    btn.disabled = false;
-    btn.innerHTML = '<span class="btn-icon">🔑</span> Sign in with GitHub';
+    signinBtn.disabled = false;
+    signinBtn.innerHTML = '<span class="btn-icon">🔑</span> Sign in with GitHub';
   });
 
-  document.getElementById('sync-signout-btn').addEventListener('click', async () => {
+  const signoutBtn = document.getElementById('sync-signout-btn');
+  if (signoutBtn) signoutBtn.addEventListener('click', async () => {
     if (!confirm('Sign out of cloud sync? Your local data stays, but will stop syncing.')) return;
     await window.quartet.sync.signOut();
   });
 
-  document.getElementById('sync-now-btn').addEventListener('click', async () => {
-    const btn = document.getElementById('sync-now-btn');
-    btn.disabled = true;
-    const original = btn.textContent;
-    btn.textContent = '⏳ Syncing…';
+  const syncNowBtn = document.getElementById('sync-now-btn');
+  if (syncNowBtn) syncNowBtn.addEventListener('click', async () => {
+    syncNowBtn.disabled = true;
+    const original = syncNowBtn.textContent;
+    syncNowBtn.textContent = '⏳ Syncing…';
     try {
       await window.quartet.sync.syncNow({ direction: 'pull' });
       await window.quartet.sync.syncNow({});
     } catch (err) {
       console.error('[sync] syncNow failed', err);
     }
-    btn.disabled = false;
-    btn.textContent = original;
+    syncNowBtn.disabled = false;
+    syncNowBtn.textContent = original;
   });
 
-  document.getElementById('sync-pull-force-btn').addEventListener('click', async () => {
+  const pullForceBtn = document.getElementById('sync-pull-force-btn');
+  if (pullForceBtn) pullForceBtn.addEventListener('click', async () => {
     if (!confirm('This will overwrite your local state with the cloud copy. Continue?')) return;
     await window.quartet.sync.pullForce();
     await reloadFromStore();
   });
 
-  document.getElementById('sync-push-force-btn').addEventListener('click', async () => {
+  const pushForceBtn = document.getElementById('sync-push-force-btn');
+  if (pushForceBtn) pushForceBtn.addEventListener('click', async () => {
     if (!confirm('This will overwrite the cloud copy with your local state. Continue?')) return;
     await window.quartet.sync.pushForce();
   });
@@ -528,19 +537,20 @@ function getPartitionForProfile(profileId) {
 }
 
 // ============================================
-// RESIZERS
+// RESIZERS — hardened cleanup
 // ============================================
 
 function startResize(type, e, extras = {}) {
   currentResizer = { type, startX: e.clientX, startY: e.clientY, ...extras };
-  resizeOverlay.style.display = 'block';
+  if (resizeOverlay) resizeOverlay.style.display = 'block';
   document.body.style.cursor = type === 'row' ? 'row-resize' : 'col-resize';
   document.body.style.userSelect = 'none';
 }
 
+// Force-clean resize state. Safe to call repeatedly — idempotent.
 function stopResize() {
   currentResizer = null;
-  resizeOverlay.style.display = 'none';
+  if (resizeOverlay) resizeOverlay.style.display = 'none';
   document.body.style.cursor = '';
   document.body.style.userSelect = '';
 }
@@ -1227,8 +1237,14 @@ function confirmTabModal() {
 // ============================================
 
 function setupEventListeners() {
+  // Resize lifecycle — listen in capture phase so we don't miss events from
+  // inside iframes or webviews, and bind multiple release points so the
+  // overlay can never get stuck visible.
   document.addEventListener('mousemove', handleMouseMove);
   document.addEventListener('mouseup', stopResize);
+  document.addEventListener('mouseleave', stopResize);
+  window.addEventListener('blur', stopResize);
+  window.addEventListener('mouseup', stopResize, true);
 
   PANES.forEach(paneId => {
     const paneEl = document.getElementById(`${paneId}-pane`);
@@ -1328,8 +1344,17 @@ function setupEventListeners() {
     btn.addEventListener('click', () => { createTab(pendingTabPaneId, btn.dataset.url); closeTabModal(); });
   });
 
-  // Keyboard shortcuts — routed to focused pane
+  // Keyboard shortcuts — these only fire when the host document has focus
+  // (not when a webview has keyboard focus). Menu accelerators in main.js
+  // handle the always-on shortcuts like F12 and Cmd+Shift+1..4.
   document.addEventListener('keydown', (e) => {
+    // Escape always releases a stuck resize, in addition to closing modals.
+    if (e.key === 'Escape') {
+      stopResize();
+      closeWorkspaceModal();
+      closeTabModal();
+      closeProfileModal();
+    }
     if ((e.metaKey || e.ctrlKey) && e.key === 't') {
       e.preventDefault();
       openTabModal(focusedPane);
@@ -1366,11 +1391,6 @@ function setupEventListeners() {
     if (e.key === 'F12') {
       e.preventDefault();
       toggleWebviewDevTools(focusedPane);
-    }
-    if (e.key === 'Escape') {
-      closeWorkspaceModal();
-      closeTabModal();
-      closeProfileModal();
     }
   });
 }
