@@ -19,7 +19,7 @@
       <div id="upper-section">
         <div id="dual-pane-container">
 
-          <!-- LEFT SIDEBAR: Workspace + Folder + Git -->
+          <!-- LEFT SIDEBAR: Workspace + Folder + Git + Cloud Sync -->
           <div id="sidebar" class="sidebar-pane">
 
             <div class="sidebar-section">
@@ -74,6 +74,38 @@
               <button id="git-refresh-btn" class="refresh-btn">
                 <span>↻</span> Refresh Status
               </button>
+            </div>
+
+            <!-- Cloud Sync Section -->
+            <div id="sync-section" class="sidebar-section">
+              <div class="sidebar-section-header">
+                <span class="sidebar-section-title">Cloud Sync</span>
+                <span id="sync-status-badge" class="status-badge signed-out">Off</span>
+              </div>
+
+              <div id="sync-signed-out">
+                <p class="sync-desc">Sign in with GitHub to sync your workspaces across devices.</p>
+                <button id="sync-signin-btn" class="git-btn signin-btn">
+                  <span class="btn-icon">🔑</span>
+                  <span>Sign in with GitHub</span>
+                </button>
+              </div>
+
+              <div id="sync-signed-in" class="hidden">
+                <div class="sync-account-row">
+                  <span class="sync-account-name" id="sync-account-name">@user</span>
+                  <button id="sync-signout-btn" class="action-btn">Sign Out</button>
+                </div>
+                <div id="sync-last-synced-text" class="folder-status">Never synced</div>
+                <button id="sync-now-btn" class="refresh-btn">↻ Sync Now</button>
+                <div id="sync-conflict-banner" class="sync-conflict-banner hidden">
+                  <p><strong>Conflict:</strong> cloud has newer data.</p>
+                  <div class="git-actions">
+                    <button id="sync-pull-force-btn" class="git-btn pull-btn">Pull (overwrite local)</button>
+                    <button id="sync-push-force-btn" class="git-btn push-btn">Push (overwrite cloud)</button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div class="sidebar-spacer"></div>
