@@ -1,26 +1,22 @@
 // ============================================
 // PARALLEL - Dual-Pane Browser for Parallel Workstreams
-// with Git sidebar (left) + Notepad (right)
+// with Git sidebar (left) + Notepad (right) + Cloud Sync
 // ============================================
 
-function uuidv4() {
-  return crypto.randomUUID();
-}
+function uuidv4() { return crypto.randomUUID(); }
 
 // State
 let workspaces = [];
 let activeWorkspace = null;
 let profiles = [];
-let focusedPane = 'left'; // 'left' | 'right' — tracks last-clicked pane for shortcuts
+let focusedPane = 'left';
 
-// Track which webviews have been created
 const createdWebviews = new Set();
 
-// Resizer state
 let currentResizer = null;
 let resizeOverlay = null;
 
-// DOM Elements — main
+// DOM
 const workspaceList = document.getElementById('workspace-list');
 const notepadContent = document.getElementById('notepad-content');
 const emptyStateOverlay = document.getElementById('empty-state-overlay');
@@ -28,21 +24,17 @@ const notepadPanel = document.getElementById('notepad-panel');
 const notepadExpand = document.getElementById('notepad-expand');
 const notepadToggle = document.getElementById('notepad-toggle');
 
-// Sidebar elements
 const sidebar = document.getElementById('sidebar');
 const sidebarExpand = document.getElementById('sidebar-expand');
 const sidebarToggle = document.getElementById('sidebar-toggle');
 
-// Modals
 const modalOverlay = document.getElementById('modal-overlay');
 const workspaceNameInput = document.getElementById('workspace-name-input');
 const tabModalOverlay = document.getElementById('tab-modal-overlay');
 const tabUrlInput = document.getElementById('tab-url-input');
 const profileModalOverlay = document.getElementById('profile-modal-overlay');
 
-// Modal transient state
 let pendingTabPaneId = 'left';
-
 const PANES = ['left', 'right'];
 
 // ============================================
@@ -52,16 +44,9 @@ const PANES = ['left', 'right'];
 async function init() {
   workspaces = await window.parallel.workspace.getAll();
   const active = await window.parallel.workspace.getActive();
-
-  if (active) {
-    activeWorkspace = workspaces.find(w => w.id === active.id);
-  }
-
+  if (active) activeWorkspace = workspaces.find(w => w.id === active.id);
   profiles = await window.parallel.profiles.getAll();
-
-  if (activeWorkspace) {
-    migrateWorkspaceStructure(activeWorkspace);
-  }
+  if (activeWorkspace) migrateWorkspaceStructure(activeWorkspace);
 
   updateProfileSelectors();
 
@@ -81,6 +66,8 @@ async function init() {
   window.parallel.onMenuToggleDevTools((event, pane) => {
     toggleWebviewDevTools(pane || focusedPane);
   });
+
+  initSync().catch((err) => console.error('[sync] initSync failed:', err));
 }
 
 // ============================================
@@ -96,7 +83,6 @@ function migrateWorkspaceStructure(workspace) {
     window.parallel.workspace.update(workspace);
     return;
   }
-
   PANES.forEach(paneId => {
     if (!workspace.panes[paneId]) {
       workspace.panes[paneId] = { activeProfileId: 'default', profiles: { 'default': { tabs: [], activeTabId: null } } };
@@ -113,7 +99,6 @@ function migrateWorkspaceStructure(workspace) {
       }
     }
   });
-
   window.parallel.workspace.update(workspace);
 }
 
@@ -140,10 +125,6 @@ function getPaneProfileId(paneId) {
   return pane?.activeProfileId || 'default';
 }
 
-// ============================================
-// FOCUSED PANE TRACKING
-// ============================================
-
 function setFocusedPane(paneId) {
   focusedPane = paneId;
   PANES.forEach(p => {
@@ -153,7 +134,7 @@ function setFocusedPane(paneId) {
 }
 
 // ============================================
-// SIDEBAR - Workspace display, Folder, Git
+// SIDEBAR
 // ============================================
 
 function updateSidebar() {
@@ -167,7 +148,6 @@ function updateSidebar() {
     const folder = activeWorkspace.folderPath || '';
     folderInput.value = folder || '';
     folderInput.placeholder = folder ? '' : 'Select a folder...';
-
     if (folder) {
       folderStatus.textContent = '';
       gitSection.classList.remove('hidden');
@@ -187,15 +167,12 @@ function updateSidebar() {
 
 async function checkGitStatus() {
   if (!activeWorkspace?.folderPath) return;
-
   const badge = document.getElementById('git-status-badge');
   const statusDisplay = document.getElementById('git-status-display');
   const statusText = statusDisplay.querySelector('.git-status-text');
-
   badge.textContent = '...';
   badge.className = 'status-badge';
   statusText.textContent = 'Checking status...';
-
   try {
     const result = await window.parallel.git.status(activeWorkspace.folderPath);
     if (result.success) {
@@ -226,15 +203,12 @@ async function checkGitStatus() {
 
 async function gitPush() {
   if (!activeWorkspace?.folderPath) return;
-
   const btn = document.getElementById('git-push-btn');
   const statusText = document.querySelector('#git-status-display .git-status-text');
   const commitInput = document.getElementById('commit-message');
-
   btn.disabled = true;
   btn.querySelector('.btn-text').textContent = 'Pushing...';
   statusText.textContent = 'Adding and committing...';
-
   try {
     const message = commitInput.value.trim() || undefined;
     const result = await window.parallel.git.push(activeWorkspace.folderPath, message);
@@ -248,21 +222,17 @@ async function gitPush() {
   } catch (err) {
     statusText.textContent = '✗ ' + err.message;
   }
-
   btn.disabled = false;
   btn.querySelector('.btn-text').textContent = 'Push';
 }
 
 async function gitPull() {
   if (!activeWorkspace?.folderPath) return;
-
   const btn = document.getElementById('git-pull-btn');
   const statusText = document.querySelector('#git-status-display .git-status-text');
-
   btn.disabled = true;
   btn.querySelector('.btn-text').textContent = 'Pulling...';
   statusText.textContent = 'Pulling from remote...';
-
   try {
     const result = await window.parallel.git.pull(activeWorkspace.folderPath);
     if (result.success) {
@@ -274,7 +244,6 @@ async function gitPull() {
   } catch (err) {
     statusText.textContent = '✗ ' + err.message;
   }
-
   btn.disabled = false;
   btn.querySelector('.btn-text').textContent = 'Pull';
 }
@@ -296,6 +265,120 @@ function toggleSidebar() {
 function expandSidebar() {
   sidebar.classList.remove('collapsed');
   sidebarExpand.classList.add('hidden');
+}
+
+// ============================================
+// CLOUD SYNC (renderer side)
+// ============================================
+
+function formatRelative(iso) {
+  if (!iso) return 'Never synced';
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const sec = Math.round((now - then) / 1000);
+  if (sec < 60) return `Synced ${sec}s ago`;
+  if (sec < 3600) return `Synced ${Math.round(sec / 60)}m ago`;
+  if (sec < 86400) return `Synced ${Math.round(sec / 3600)}h ago`;
+  return `Synced ${Math.round(sec / 86400)}d ago`;
+}
+
+function updateSyncUI(status) {
+  const badge = document.getElementById('sync-status-badge');
+  const signedOut = document.getElementById('sync-signed-out');
+  const signedIn = document.getElementById('sync-signed-in');
+  const accountName = document.getElementById('sync-account-name');
+  const lastSyncedText = document.getElementById('sync-last-synced-text');
+  const conflictBanner = document.getElementById('sync-conflict-banner');
+  if (!badge || !signedOut || !signedIn) return;
+  badge.className = 'status-badge ' + (status.status || 'signed-out');
+  const badgeText = {
+    idle: 'Synced', pushing: 'Pushing', pulling: 'Pulling',
+    conflict: 'Conflict', error: 'Error', 'signed-out': 'Off',
+  }[status.status] || '…';
+  badge.textContent = badgeText;
+  if (status.signedIn) {
+    signedOut.classList.add('hidden');
+    signedIn.classList.remove('hidden');
+    if (accountName) accountName.textContent = '@' + (status.githubLogin || 'user');
+    if (lastSyncedText) lastSyncedText.textContent = formatRelative(status.lastSyncedAt);
+    if (conflictBanner) conflictBanner.classList.toggle('hidden', status.status !== 'conflict');
+  } else {
+    signedOut.classList.remove('hidden');
+    signedIn.classList.add('hidden');
+  }
+}
+
+async function reloadFromStore() {
+  workspaces = await window.parallel.workspace.getAll();
+  const active = await window.parallel.workspace.getActive();
+  if (active) activeWorkspace = workspaces.find(w => w.id === active.id);
+  profiles = await window.parallel.profiles.getAll();
+  if (activeWorkspace) migrateWorkspaceStructure(activeWorkspace);
+  document.querySelectorAll('.pane-webview-container webview').forEach(wv => wv.remove());
+  createdWebviews.clear();
+  updateProfileSelectors();
+  renderWorkspaces();
+  PANES.forEach(p => renderPane(p));
+  updateNotepad();
+  updateSidebar();
+  updateEmptyState();
+}
+
+async function initSync() {
+  const status = await window.parallel.sync.getStatus();
+  updateSyncUI(status);
+
+  window.parallel.sync.onStatus((status) => updateSyncUI(status));
+  window.parallel.sync.onRemoteApplied(() => reloadFromStore());
+
+  const signinBtn = document.getElementById('sync-signin-btn');
+  if (signinBtn) signinBtn.addEventListener('click', async () => {
+    signinBtn.disabled = true;
+    signinBtn.innerHTML = '<span class="btn-icon">⏳</span> Waiting for browser…';
+    try {
+      const result = await window.parallel.sync.signIn();
+      if (result.error) alert('Sign-in failed: ' + result.error);
+      else if (result.ok || result.alreadySignedIn) await reloadFromStore();
+    } catch (err) {
+      alert('Sign-in error: ' + err.message);
+    }
+    signinBtn.disabled = false;
+    signinBtn.innerHTML = '<span class="btn-icon">🔑</span> Sign in with GitHub';
+  });
+
+  const signoutBtn = document.getElementById('sync-signout-btn');
+  if (signoutBtn) signoutBtn.addEventListener('click', async () => {
+    if (!confirm('Sign out of cloud sync? Your local data stays, but will stop syncing.')) return;
+    await window.parallel.sync.signOut();
+  });
+
+  const syncNowBtn = document.getElementById('sync-now-btn');
+  if (syncNowBtn) syncNowBtn.addEventListener('click', async () => {
+    syncNowBtn.disabled = true;
+    const original = syncNowBtn.textContent;
+    syncNowBtn.textContent = '⏳ Syncing…';
+    try {
+      await window.parallel.sync.syncNow({ direction: 'pull' });
+      await window.parallel.sync.syncNow({});
+    } catch (err) {
+      console.error('[sync] syncNow failed', err);
+    }
+    syncNowBtn.disabled = false;
+    syncNowBtn.textContent = original;
+  });
+
+  const pullForceBtn = document.getElementById('sync-pull-force-btn');
+  if (pullForceBtn) pullForceBtn.addEventListener('click', async () => {
+    if (!confirm('This will overwrite your local state with the cloud copy. Continue?')) return;
+    await window.parallel.sync.pullForce();
+    await reloadFromStore();
+  });
+
+  const pushForceBtn = document.getElementById('sync-push-force-btn');
+  if (pushForceBtn) pushForceBtn.addEventListener('click', async () => {
+    if (!confirm('This will overwrite the cloud copy with your local state. Continue?')) return;
+    await window.parallel.sync.pushForce();
+  });
 }
 
 // ============================================
@@ -333,7 +416,6 @@ function renderProfileList() {
       </div>
     </div>
   `).join('');
-
   list.querySelectorAll('.profile-item-actions .delete').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const item = e.target.closest('.profile-item');
@@ -349,10 +431,8 @@ async function addProfile() {
   const input = document.getElementById('new-profile-input');
   const name = input.value.trim();
   if (!name) return;
-
   const profile = await window.parallel.profiles.create(name);
   profiles.push(profile);
-
   input.value = '';
   renderProfileList();
   updateProfileSelectors();
@@ -361,7 +441,6 @@ async function addProfile() {
 async function deleteProfile(id) {
   await window.parallel.profiles.delete(id);
   profiles = profiles.filter(p => p.id !== id);
-
   if (activeWorkspace) {
     PANES.forEach(paneId => {
       const pane = activeWorkspace.panes[paneId];
@@ -377,7 +456,6 @@ async function deleteProfile(id) {
     });
     await window.parallel.workspace.update(activeWorkspace);
   }
-
   renderProfileList();
   updateProfileSelectors();
   PANES.forEach(p => renderPane(p));
@@ -388,28 +466,26 @@ function getPartitionForProfile(profileId) {
 }
 
 // ============================================
-// GLOBAL RESIZE HANDLERS
+// RESIZE - hardened cleanup
 // ============================================
 
 function startResize(type, e, extras = {}) {
   currentResizer = { type, startX: e.clientX, startY: e.clientY, ...extras };
-  resizeOverlay.style.display = 'block';
+  if (resizeOverlay) resizeOverlay.style.display = 'block';
   document.body.style.cursor = 'col-resize';
   document.body.style.userSelect = 'none';
 }
 
 function stopResize() {
   currentResizer = null;
-  resizeOverlay.style.display = 'none';
+  if (resizeOverlay) resizeOverlay.style.display = 'none';
   document.body.style.cursor = '';
   document.body.style.userSelect = '';
 }
 
 function handleMouseMove(e) {
   if (!currentResizer) return;
-
   const { type, startX, startLeftWidth, startRightWidth, startWidth } = currentResizer;
-
   if (type === 'pane') {
     const leftPane = document.getElementById('left-pane');
     const rightPane = document.getElementById('right-pane');
@@ -440,14 +516,10 @@ function toggleWebviewDevTools(paneId) {
   const paneData = getPaneData(paneId);
   const profileId = getPaneProfileId(paneId);
   if (!paneData?.activeTabId) return;
-
   const webview = document.getElementById(`webview-${paneId}-${profileId}-${paneData.activeTabId}`);
   if (webview) {
-    if (webview.isDevToolsOpened()) {
-      webview.closeDevTools();
-    } else {
-      webview.openDevTools();
-    }
+    if (webview.isDevToolsOpened()) webview.closeDevTools();
+    else webview.openDevTools();
   }
 }
 
@@ -456,9 +528,7 @@ function setupWebviewDevToolsHandler(webview) {
     if (webview.classList.contains('active')) {
       webview.style.visibility = 'hidden';
       void webview.offsetHeight;
-      requestAnimationFrame(() => {
-        webview.style.visibility = 'visible';
-      });
+      requestAnimationFrame(() => { webview.style.visibility = 'visible'; });
     }
   });
 }
@@ -469,7 +539,6 @@ function setupWebviewContextMenu(webview, paneId) {
     const params = e.params;
     const otherPane = paneId === 'left' ? 'right' : 'left';
     let menuItems = [];
-
     if (params.linkURL) {
       menuItems.push({ label: 'Open Link in New Tab', action: () => createTab(paneId, params.linkURL) });
       menuItems.push({ label: `Open Link in ${otherPane.charAt(0).toUpperCase() + otherPane.slice(1)} Pane`, action: () => createTab(otherPane, params.linkURL) });
@@ -482,24 +551,20 @@ function setupWebviewContextMenu(webview, paneId) {
       menuItems.push({ label: 'Paste', action: () => webview.paste() });
     }
     if (menuItems.length > 0) menuItems.push({ type: 'separator' });
-
     menuItems.push({ label: 'Back', action: () => webview.goBack(), disabled: !webview.canGoBack() });
     menuItems.push({ label: 'Forward', action: () => webview.goForward(), disabled: !webview.canGoForward() });
     menuItems.push({ label: 'Reload', action: () => webview.reload() });
     menuItems.push({ type: 'separator' });
     menuItems.push({ label: 'Inspect Element', action: () => webview.inspectElement(params.x, params.y) });
-
     showContextMenu(params.x, params.y, menuItems);
   });
 }
 
 function showContextMenu(x, y, items) {
   document.getElementById('context-menu')?.remove();
-
   const menu = document.createElement('div');
   menu.id = 'context-menu';
   menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;background:var(--light-bg);border:1px solid var(--light-border);border-radius:8px;padding:4px 0;min-width:200px;z-index:10000;box-shadow:0 8px 24px rgba(0,0,0,0.15);`;
-
   items.forEach(item => {
     if (item.type === 'separator') {
       const sep = document.createElement('div');
@@ -518,32 +583,22 @@ function showContextMenu(x, y, items) {
       menu.appendChild(btn);
     }
   });
-
   document.body.appendChild(menu);
-
   const rect = menu.getBoundingClientRect();
   if (rect.right > window.innerWidth) menu.style.left = (window.innerWidth - rect.width - 10) + 'px';
   if (rect.bottom > window.innerHeight) menu.style.top = (window.innerHeight - rect.height - 10) + 'px';
-
   const closeMenu = (e) => {
     if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', closeMenu); }
   };
   setTimeout(() => document.addEventListener('click', closeMenu), 0);
 }
 
-// ============================================
-// UTILITY: Simplify Tab Title
-// ============================================
-
 function simplifyTitle(title, url) {
   if (!title || title === 'Loading...') return title || 'New Tab';
-
   const knownBrands = ['Claude', 'GitHub', 'Google', 'Cloudflare', 'Vercel', 'Discord', 'Slack', 'YouTube', 'Reddit', 'ChatGPT', 'Notion', 'Figma', 'Linear'];
-
   for (const brand of knownBrands) {
     if (title.toLowerCase().includes(brand.toLowerCase())) return brand;
   }
-
   const separators = [' | ', ' - ', ' — ', ' · ', ': '];
   for (const sep of separators) {
     if (title.includes(sep)) {
@@ -551,7 +606,6 @@ function simplifyTitle(title, url) {
       if (parts[0].trim().length <= 25) return parts[0].trim();
     }
   }
-
   return title.length <= 20 ? title : title.substring(0, 18) + '...';
 }
 
@@ -561,12 +615,10 @@ function simplifyTitle(title, url) {
 
 function renderWorkspaces() {
   workspaceList.innerHTML = '';
-
   workspaces.forEach(workspace => {
     const item = document.createElement('div');
     item.className = `workspace-item ${activeWorkspace?.id === workspace.id ? 'active' : ''}`;
     item.dataset.id = workspace.id;
-
     item.innerHTML = `
       <span class="workspace-name">${escapeHtml(workspace.name)}</span>
       <div class="workspace-actions">
@@ -574,42 +626,29 @@ function renderWorkspaces() {
         <button class="workspace-action-btn delete" title="Delete">×</button>
       </div>
     `;
-
     item.addEventListener('click', (e) => {
       if (!e.target.classList.contains('workspace-action-btn')) switchWorkspace(workspace.id);
     });
     item.querySelector('.edit').addEventListener('click', (e) => { e.stopPropagation(); openRenameModal(workspace); });
     item.querySelector('.delete').addEventListener('click', (e) => { e.stopPropagation(); deleteWorkspace(workspace.id); });
-
     workspaceList.appendChild(item);
   });
 }
 
 async function createWorkspace(name) {
   const claudeTab = { id: uuidv4(), url: 'https://claude.ai', title: 'Loading...', createdAt: new Date().toISOString() };
-
   const workspace = {
-    id: uuidv4(),
-    name,
+    id: uuidv4(), name,
     panes: {
-      left: {
-        activeProfileId: 'default',
-        profiles: { 'default': { tabs: [], activeTabId: null } }
-      },
-      right: {
-        activeProfileId: 'default',
-        profiles: { 'default': { tabs: [claudeTab], activeTabId: claudeTab.id } }
-      }
+      left: { activeProfileId: 'default', profiles: { 'default': { tabs: [], activeTabId: null } } },
+      right: { activeProfileId: 'default', profiles: { 'default': { tabs: [claudeTab], activeTabId: claudeTab.id } } }
     },
-    notes: '',
-    folderPath: '',
+    notes: '', folderPath: '',
     createdAt: new Date().toISOString()
   };
-
   await window.parallel.workspace.create(workspace);
   workspaces.push(workspace);
   activeWorkspace = workspace;
-
   updateProfileSelectors();
   renderWorkspaces();
   PANES.forEach(p => renderPane(p));
@@ -621,12 +660,9 @@ async function createWorkspace(name) {
 async function switchWorkspace(workspaceId) {
   document.querySelectorAll('.pane-webview-container webview').forEach(wv => wv.remove());
   createdWebviews.clear();
-
   activeWorkspace = workspaces.find(w => w.id === workspaceId);
   await window.parallel.workspace.setActive(workspaceId);
-
   if (activeWorkspace) migrateWorkspaceStructure(activeWorkspace);
-
   updateProfileSelectors();
   renderWorkspaces();
   PANES.forEach(p => renderPane(p));
@@ -636,16 +672,13 @@ async function switchWorkspace(workspaceId) {
 
 async function deleteWorkspace(workspaceId) {
   if (!confirm('Delete this workspace and all its tabs?')) return;
-
   workspaces = await window.parallel.workspace.delete(workspaceId);
-
   if (activeWorkspace?.id === workspaceId) {
     document.querySelectorAll('.pane-webview-container webview').forEach(wv => wv.remove());
     createdWebviews.clear();
     activeWorkspace = workspaces[0] || null;
     if (activeWorkspace) migrateWorkspaceStructure(activeWorkspace);
   }
-
   updateProfileSelectors();
   renderWorkspaces();
   PANES.forEach(p => renderPane(p));
@@ -672,51 +705,39 @@ function renderPane(paneId) {
   const tabList = document.querySelector(`.pane-tab-list[data-pane="${paneId}"]`);
   const webviewContainer = document.querySelector(`.pane-webview-container[data-pane="${paneId}"]`);
   const navBar = document.querySelector(`.pane-nav-bar[data-pane="${paneId}"]`);
-
   tabList.innerHTML = '';
-
   if (!activeWorkspace) {
     webviewContainer.querySelectorAll('webview').forEach(wv => wv.remove());
     webviewContainer.querySelector('.pane-empty-state').style.display = 'block';
     navBar.classList.add('hidden');
     return;
   }
-
   migrateWorkspaceStructure(activeWorkspace);
-
   const pane = activeWorkspace.panes[paneId];
   const activeProfileId = pane.activeProfileId || 'default';
   const activeProfileData = ensurePaneProfile(pane, activeProfileId);
-
   const emptyState = webviewContainer.querySelector('.pane-empty-state');
   const hasTabs = activeProfileData.tabs.length > 0;
   emptyState.style.display = hasTabs ? 'none' : 'block';
   navBar.classList.toggle('hidden', !hasTabs);
-
   webviewContainer.querySelectorAll('webview').forEach(wv => wv.classList.remove('active'));
-
   Object.entries(pane.profiles || {}).forEach(([profileId, profileData]) => {
     const partition = getPartitionForProfile(profileId);
     const isActiveProfile = profileId === activeProfileId;
-
     profileData.tabs.forEach(tab => {
       const webviewKey = `${paneId}-${profileId}-${tab.id}`;
       const webviewId = `webview-${paneId}-${profileId}-${tab.id}`;
-
       if (isActiveProfile) {
         const item = document.createElement('div');
         item.className = `pane-tab-item ${profileData.activeTabId === tab.id ? 'active' : ''}`;
         item.dataset.id = tab.id;
-
         const favicon = getFaviconUrl(tab.url);
         const displayTitle = simplifyTitle(tab.title, tab.url);
-
         item.innerHTML = `
           <img class="pane-tab-favicon" src="${favicon}" onerror="this.style.display='none'">
           <span class="pane-tab-title" title="${escapeHtml(tab.title || '')}">${escapeHtml(displayTitle)}</span>
           <button class="pane-tab-close" title="Close tab">×</button>
         `;
-
         item.addEventListener('click', (e) => {
           if (!e.target.classList.contains('pane-tab-close')) switchTab(paneId, tab.id);
         });
@@ -724,17 +745,14 @@ function renderPane(paneId) {
           e.stopPropagation();
           closeTab(paneId, tab.id);
         });
-
         tabList.appendChild(item);
       }
-
       if (!createdWebviews.has(webviewKey)) {
         const webview = document.createElement('webview');
         webview.id = webviewId;
         webview.src = tab.url;
         webview.setAttribute('partition', partition);
         webview.setAttribute('allowpopups', 'true');
-
         webview.addEventListener('dom-ready', () => {
           setupWebviewContextMenu(webview, paneId);
           setupWebviewDevToolsHandler(webview);
@@ -749,32 +767,26 @@ function renderPane(paneId) {
           if (isActiveProfile) updateNavBar(paneId);
         });
         webview.addEventListener('new-window', (e) => { e.preventDefault(); createTab(paneId, e.url); });
-
         webviewContainer.appendChild(webview);
         createdWebviews.add(webviewKey);
       }
-
       if (isActiveProfile && profileData.activeTabId === tab.id) {
         document.getElementById(webviewId)?.classList.add('active');
       }
     });
   });
-
   updateNavBar(paneId);
 }
 
 function updateNavBar(paneId) {
   if (!activeWorkspace) return;
-
   const paneData = getPaneData(paneId);
   const profileId = getPaneProfileId(paneId);
   if (!paneData?.activeTabId) return;
-
   const webview = document.getElementById(`webview-${paneId}-${profileId}-${paneData.activeTabId}`);
   const navUrl = document.querySelector(`.nav-url[data-pane="${paneId}"]`);
   const navBack = document.querySelector(`.nav-back[data-pane="${paneId}"]`);
   const navForward = document.querySelector(`.nav-forward[data-pane="${paneId}"]`);
-
   if (webview && navUrl) {
     const tab = paneData.tabs.find(t => t.id === paneData.activeTabId);
     navUrl.value = tab?.url || '';
@@ -789,23 +801,19 @@ function updateNavBar(paneId) {
 }
 
 // ============================================
-// TAB MANAGEMENT (per pane)
+// TAB MANAGEMENT
 // ============================================
 
 async function createTab(paneId, url) {
   if (!activeWorkspace) { alert('Create a workspace first'); return; }
-
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
     url = url.includes('.') && !url.includes(' ') ? 'https://' + url : `https://www.google.com/search?q=${encodeURIComponent(url)}`;
   }
-
   const tab = { id: uuidv4(), url, title: 'Loading...', createdAt: new Date().toISOString() };
   const paneData = getPaneData(paneId);
   if (!paneData) return;
-
   paneData.tabs.push(tab);
   paneData.activeTabId = tab.id;
-
   await window.parallel.workspace.update(activeWorkspace);
   renderPane(paneId);
   setFocusedPane(paneId);
@@ -813,20 +821,16 @@ async function createTab(paneId, url) {
 
 async function switchTab(paneId, tabId) {
   if (!activeWorkspace) return;
-
   const paneData = getPaneData(paneId);
   const profileId = getPaneProfileId(paneId);
   paneData.activeTabId = tabId;
   await window.parallel.workspace.update(activeWorkspace);
-
   document.querySelectorAll(`.pane-tab-list[data-pane="${paneId}"] .pane-tab-item`).forEach(item => {
     item.classList.toggle('active', item.dataset.id === tabId);
   });
-
   document.querySelectorAll(`.pane-webview-container[data-pane="${paneId}"] webview`).forEach(wv => {
     wv.classList.toggle('active', wv.id === `webview-${paneId}-${profileId}-${tabId}`);
   });
-
   updateNavBar(paneId);
   setFocusedPane(paneId);
 }
@@ -858,42 +862,33 @@ function navigateToUrl(paneId, url) {
   const paneData = getPaneData(paneId);
   const profileId = getPaneProfileId(paneId);
   if (!paneData?.activeTabId) return;
-
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
     url = url.includes('.') && !url.includes(' ') ? 'https://' + url : `https://www.google.com/search?q=${encodeURIComponent(url)}`;
   }
-
   const webview = document.getElementById(`webview-${paneId}-${profileId}-${paneData.activeTabId}`);
   if (webview) webview.src = url;
 }
 
 async function closeTab(paneId, tabId) {
   if (!activeWorkspace) return;
-
   const paneData = getPaneData(paneId);
   const profileId = getPaneProfileId(paneId);
-
   document.getElementById(`webview-${paneId}-${profileId}-${tabId}`)?.remove();
   createdWebviews.delete(`${paneId}-${profileId}-${tabId}`);
-
   paneData.tabs = paneData.tabs.filter(t => t.id !== tabId);
   if (paneData.activeTabId === tabId) paneData.activeTabId = paneData.tabs[0]?.id || null;
-
   await window.parallel.workspace.update(activeWorkspace);
   renderPane(paneId);
 }
 
 async function updateTabTitle(paneId, tabId, title, profileId) {
   if (!activeWorkspace) return;
-
   const pane = activeWorkspace.panes[paneId];
   const profileData = pane?.profiles?.[profileId];
   const tab = profileData?.tabs.find(t => t.id === tabId);
-
   if (tab) {
     tab.title = title;
     await window.parallel.workspace.update(activeWorkspace);
-
     if (profileId === pane.activeProfileId) {
       const tabEl = document.querySelector(`.pane-tab-list[data-pane="${paneId}"] .pane-tab-item[data-id="${tabId}"] .pane-tab-title`);
       if (tabEl) {
@@ -906,19 +901,15 @@ async function updateTabTitle(paneId, tabId, title, profileId) {
 
 async function updateTabUrl(paneId, tabId, url, profileId) {
   if (!activeWorkspace) return;
-
   const pane = activeWorkspace.panes[paneId];
   const profileData = pane?.profiles?.[profileId];
   const tab = profileData?.tabs.find(t => t.id === tabId);
-
   if (tab) {
     tab.url = url;
     await window.parallel.workspace.update(activeWorkspace);
-
     if (profileId === pane.activeProfileId && profileData.activeTabId === tabId) {
       const navUrl = document.querySelector(`.nav-url[data-pane="${paneId}"]`);
       if (navUrl) navUrl.value = url;
-
       const tabEl = document.querySelector(`.pane-tab-list[data-pane="${paneId}"] .pane-tab-item[data-id="${tabId}"] .pane-tab-favicon`);
       if (tabEl) {
         tabEl.src = getFaviconUrl(url);
@@ -930,18 +921,16 @@ async function updateTabUrl(paneId, tabId, url, profileId) {
 
 async function changeProfile(paneId, profileId) {
   if (!activeWorkspace) return;
-
   const pane = activeWorkspace.panes[paneId];
   pane.activeProfileId = profileId;
   ensurePaneProfile(pane, profileId);
-
   await window.parallel.workspace.update(activeWorkspace);
   renderPane(paneId);
   updateProfileSelectors();
 }
 
 // ============================================
-// NOTEPAD MANAGEMENT
+// NOTEPAD
 // ============================================
 
 function updateNotepad() {
@@ -985,11 +974,8 @@ function updateEmptyState() {
 }
 
 function getFaviconUrl(url) {
-  try {
-    return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=32`;
-  } catch {
-    return '';
-  }
+  try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=32`; }
+  catch { return ''; }
 }
 
 function escapeHtml(text) {
@@ -1039,9 +1025,7 @@ function openTabModal(paneId) {
   if (!activeWorkspace) { alert('Create a workspace first'); return; }
   pendingTabPaneId = paneId;
   const title = document.getElementById('tab-modal-title');
-  if (title) {
-    title.textContent = `New Tab (${paneId.charAt(0).toUpperCase() + paneId.slice(1)} Pane)`;
-  }
+  if (title) title.textContent = `New Tab (${paneId.charAt(0).toUpperCase() + paneId.slice(1)} Pane)`;
   tabUrlInput.value = '';
   tabModalOverlay.classList.remove('hidden');
   tabUrlInput.focus();
@@ -1065,15 +1049,15 @@ function confirmTabModal() {
 function setupEventListeners() {
   document.addEventListener('mousemove', handleMouseMove);
   document.addEventListener('mouseup', stopResize);
+  document.addEventListener('mouseleave', stopResize);
+  window.addEventListener('blur', stopResize);
+  window.addEventListener('mouseup', stopResize, true);
 
   PANES.forEach(paneId => {
     const paneEl = document.getElementById(`${paneId}-pane`);
-    if (paneEl) {
-      paneEl.addEventListener('mousedown', () => setFocusedPane(paneId));
-    }
+    if (paneEl) paneEl.addEventListener('mousedown', () => setFocusedPane(paneId));
   });
 
-  // Sidebar
   document.getElementById('devtools-btn').addEventListener('click', () => toggleWebviewDevTools(focusedPane));
   document.getElementById('folder-browse-btn').addEventListener('click', browseFolder);
   document.getElementById('folder-path-input').addEventListener('click', browseFolder);
@@ -1087,7 +1071,7 @@ function setupEventListeners() {
   document.getElementById('empty-create-workspace').addEventListener('click', openCreateWorkspaceModal);
 
   document.querySelectorAll('.pane-add-tab').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', () => {
       const paneId = btn.dataset.pane;
       setFocusedPane(paneId);
       openTabModal(paneId);
@@ -1100,9 +1084,7 @@ function setupEventListeners() {
       changeProfile(paneId, e.target.value);
     });
   });
-  document.querySelectorAll('.profile-manage-btn').forEach(btn => {
-    btn.addEventListener('click', openProfileModal);
-  });
+  document.querySelectorAll('.profile-manage-btn').forEach(btn => btn.addEventListener('click', openProfileModal));
   document.getElementById('profile-modal-close').addEventListener('click', closeProfileModal);
   document.getElementById('add-profile-btn').addEventListener('click', addProfile);
   document.getElementById('new-profile-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addProfile(); });
@@ -1146,23 +1128,20 @@ function setupEventListeners() {
   });
 
   document.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 't') {
-      e.preventDefault();
-      openTabModal(focusedPane);
+    if (e.key === 'Escape') {
+      stopResize();
+      closeWorkspaceModal();
+      closeTabModal();
+      closeProfileModal();
     }
+    if ((e.metaKey || e.ctrlKey) && e.key === 't') { e.preventDefault(); openTabModal(focusedPane); }
     if ((e.metaKey || e.ctrlKey) && e.key === 'w') {
       e.preventDefault();
       const pd = getPaneData(focusedPane);
       if (pd?.activeTabId) closeTab(focusedPane, pd.activeTabId);
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
-      e.preventDefault();
-      openCreateWorkspaceModal();
-    }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
-      e.preventDefault();
-      refreshTab(focusedPane);
-    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'n') { e.preventDefault(); openCreateWorkspaceModal(); }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'r') { e.preventDefault(); refreshTab(focusedPane); }
     if ((e.metaKey || e.ctrlKey) && e.key === 'l') {
       e.preventDefault();
       const nav = document.querySelector(`.nav-url[data-pane="${focusedPane}"]`);
@@ -1173,21 +1152,10 @@ function setupEventListeners() {
       const pd = getPaneData(focusedPane);
       if (pd?.tabs?.length) {
         const idx = parseInt(e.key, 10) - 1;
-        if (idx < pd.tabs.length) {
-          e.preventDefault();
-          switchTab(focusedPane, pd.tabs[idx].id);
-        }
+        if (idx < pd.tabs.length) { e.preventDefault(); switchTab(focusedPane, pd.tabs[idx].id); }
       }
     }
-    if (e.key === 'F12') {
-      e.preventDefault();
-      toggleWebviewDevTools(focusedPane);
-    }
-    if (e.key === 'Escape') {
-      closeWorkspaceModal();
-      closeTabModal();
-      closeProfileModal();
-    }
+    if (e.key === 'F12') { e.preventDefault(); toggleWebviewDevTools(focusedPane); }
   });
 }
 
