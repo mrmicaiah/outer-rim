@@ -4,7 +4,6 @@ const fs = require('fs');
 
 class Store {
   constructor() {
-    // Get the user data path from Electron
     const userDataPath = app.getPath('userData');
     this.path = path.join(userDataPath, 'parallel-data.json');
     this.data = this.parseDataFile();
@@ -36,6 +35,21 @@ class Store {
 
   delete(key) {
     delete this.data[key];
+    try {
+      fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2));
+    } catch (error) {
+      console.error('Error writing store:', error);
+    }
+  }
+
+  // Return the entire store for cloud sync snapshotting.
+  getAll() {
+    return this.data;
+  }
+
+  // Replace the entire store contents (used when applying a remote sync snapshot).
+  replaceAll(newData) {
+    this.data = newData || {};
     try {
       fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2));
     } catch (error) {
