@@ -27,10 +27,19 @@ contextBridge.exposeInMainWorld('parallel', {
     push: (projectPath, message) => ipcRenderer.invoke('git:push', projectPath, message),
     pull: (projectPath) => ipcRenderer.invoke('git:pull', projectPath),
   },
+  sync: {
+    getStatus: () => ipcRenderer.invoke('sync:getStatus'),
+    signIn: () => ipcRenderer.invoke('sync:signIn'),
+    signOut: () => ipcRenderer.invoke('sync:signOut'),
+    syncNow: (opts) => ipcRenderer.invoke('sync:syncNow', opts || {}),
+    pushForce: () => ipcRenderer.invoke('sync:pushForce'),
+    pullForce: () => ipcRenderer.invoke('sync:pullForce'),
+    onStatus: (callback) => ipcRenderer.on('sync:status', (_event, status) => callback(status)),
+    onRemoteApplied: (callback) => ipcRenderer.on('sync:remote-applied', () => callback()),
+  },
   devtools: {
     toggle: () => ipcRenderer.invoke('devtools:toggle'),
     openWebview: (pane) => ipcRenderer.invoke('devtools:openWebview', pane),
   },
-  // Menu events — callback receives (event, pane) where pane is 'left' | 'right' | null
   onMenuToggleDevTools: (callback) => ipcRenderer.on('menu:toggleDevTools', callback),
 });
