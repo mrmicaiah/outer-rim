@@ -39,6 +39,26 @@ class Store {
       console.error('Error writing store:', error);
     }
   }
+
+  // ============================================
+  // Sync hooks — used by shared/sync-client.js
+  // ============================================
+
+  // Return a deep-cloned snapshot of the whole data blob for uploading to the cloud.
+  getAll() {
+    return JSON.parse(JSON.stringify(this.data));
+  }
+
+  // Replace the entire data blob with a snapshot from the cloud.
+  // The renderer is expected to reload its view after this.
+  replaceAll(newData) {
+    this.data = newData && typeof newData === 'object' ? newData : {};
+    try {
+      fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2));
+    } catch (error) {
+      console.error('Error writing store during replaceAll:', error);
+    }
+  }
 }
 
 module.exports = Store;
