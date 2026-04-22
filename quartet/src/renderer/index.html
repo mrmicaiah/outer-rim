@@ -18,10 +18,9 @@
     <div id="main-content">
       <div id="upper-section">
 
-        <!-- Outer container: horizontal flex [sidebar] [grid-wrapper] [notepad-resizer] [notepad] -->
         <div id="quad-pane-container">
 
-          <!-- LEFT SIDEBAR: Workspace + Folder + Git -->
+          <!-- LEFT SIDEBAR: Workspace + Folder + Git + Cloud Sync -->
           <div id="sidebar" class="sidebar-pane">
 
             <div class="sidebar-section">
@@ -78,6 +77,50 @@
               </button>
             </div>
 
+            <!-- ============================================ -->
+            <!-- Cloud Sync Section                          -->
+            <!-- ============================================ -->
+            <div class="sidebar-section" id="sync-section">
+              <div class="sidebar-section-header">
+                <span class="sidebar-section-title">Cloud Sync</span>
+                <span id="sync-status-badge" class="status-badge">…</span>
+              </div>
+
+              <!-- Signed-out state -->
+              <div id="sync-signed-out" class="sync-state">
+                <p class="sync-desc">Sign in with GitHub to sync your workspaces across devices.</p>
+                <button id="sync-signin-btn" class="action-btn sync-signin-btn">
+                  <span class="btn-icon">🔑</span> Sign in with GitHub
+                </button>
+              </div>
+
+              <!-- Signed-in state -->
+              <div id="sync-signed-in" class="sync-state hidden">
+                <div class="sync-account">
+                  <span class="sync-account-label">Signed in as</span>
+                  <span id="sync-account-name" class="sync-account-name">@user</span>
+                </div>
+                <div class="sync-last-synced">
+                  <span id="sync-last-synced-text">Never synced</span>
+                </div>
+
+                <div id="sync-conflict-banner" class="sync-conflict-banner hidden">
+                  <p>⚠ Cloud has newer data. Pull to get it (you'll lose unsynced local changes), or overwrite cloud with your local copy.</p>
+                  <div class="sync-conflict-actions">
+                    <button id="sync-pull-force-btn" class="action-btn action-btn-danger">Pull (overwrite local)</button>
+                    <button id="sync-push-force-btn" class="action-btn action-btn-danger">Push (overwrite cloud)</button>
+                  </div>
+                </div>
+
+                <button id="sync-now-btn" class="refresh-btn">
+                  <span>↻</span> Sync Now
+                </button>
+                <button id="sync-signout-btn" class="refresh-btn sync-signout-btn">
+                  Sign out
+                </button>
+              </div>
+            </div>
+
             <div class="sidebar-spacer"></div>
 
             <button id="sidebar-toggle" class="sidebar-collapse-btn" title="Collapse sidebar">◀</button>
@@ -91,7 +134,6 @@
 
             <!-- TOP ROW -->
             <div class="pane-row" id="top-row">
-              <!-- TOP-LEFT PANE -->
               <div id="topLeft-pane" class="browser-pane" data-pane="topLeft">
                 <div class="pane-tab-bar">
                   <div class="pane-tab-list" data-pane="topLeft"></div>
@@ -110,16 +152,12 @@
                   <input type="text" class="nav-url" data-pane="topLeft" placeholder="Enter URL or search...">
                 </div>
                 <div class="pane-webview-container" data-pane="topLeft">
-                  <div class="pane-empty-state">
-                    <p>Click + to open a tab</p>
-                  </div>
+                  <div class="pane-empty-state"><p>Click + to open a tab</p></div>
                 </div>
               </div>
 
-              <!-- VERTICAL RESIZER (top row) -->
               <div class="pane-vertical-resizer" data-row="top"></div>
 
-              <!-- TOP-RIGHT PANE -->
               <div id="topRight-pane" class="browser-pane" data-pane="topRight">
                 <div class="pane-tab-bar">
                   <div class="pane-tab-list" data-pane="topRight"></div>
@@ -138,19 +176,15 @@
                   <input type="text" class="nav-url" data-pane="topRight" placeholder="Enter URL or search...">
                 </div>
                 <div class="pane-webview-container" data-pane="topRight">
-                  <div class="pane-empty-state">
-                    <p>Click + to open a tab</p>
-                  </div>
+                  <div class="pane-empty-state"><p>Click + to open a tab</p></div>
                 </div>
               </div>
             </div>
 
-            <!-- HORIZONTAL RESIZER -->
             <div id="row-resizer"></div>
 
             <!-- BOTTOM ROW -->
             <div class="pane-row" id="bottom-row">
-              <!-- BOTTOM-LEFT PANE -->
               <div id="bottomLeft-pane" class="browser-pane" data-pane="bottomLeft">
                 <div class="pane-tab-bar">
                   <div class="pane-tab-list" data-pane="bottomLeft"></div>
@@ -169,16 +203,12 @@
                   <input type="text" class="nav-url" data-pane="bottomLeft" placeholder="Enter URL or search...">
                 </div>
                 <div class="pane-webview-container" data-pane="bottomLeft">
-                  <div class="pane-empty-state">
-                    <p>Click + to open a tab</p>
-                  </div>
+                  <div class="pane-empty-state"><p>Click + to open a tab</p></div>
                 </div>
               </div>
 
-              <!-- VERTICAL RESIZER (bottom row - slaved to top row in JS) -->
               <div class="pane-vertical-resizer" data-row="bottom"></div>
 
-              <!-- BOTTOM-RIGHT PANE -->
               <div id="bottomRight-pane" class="browser-pane" data-pane="bottomRight">
                 <div class="pane-tab-bar">
                   <div class="pane-tab-list" data-pane="bottomRight"></div>
@@ -197,20 +227,15 @@
                   <input type="text" class="nav-url" data-pane="bottomRight" placeholder="Enter URL or search...">
                 </div>
                 <div class="pane-webview-container" data-pane="bottomRight">
-                  <div class="pane-empty-state">
-                    <p>Click + to open a tab</p>
-                  </div>
+                  <div class="pane-empty-state"><p>Click + to open a tab</p></div>
                 </div>
               </div>
             </div>
 
           </div>
-          <!-- end grid-wrapper -->
 
-          <!-- Notepad Resizer -->
           <div id="notepad-resizer"></div>
 
-          <!-- Notepad Panel -->
           <div id="notepad-panel">
             <div class="notepad-header">
               <span class="notepad-title">📝 Notes</span>
@@ -219,22 +244,18 @@
             <textarea id="notepad-content" placeholder="Workspace notes..."></textarea>
           </div>
 
-          <!-- Notepad Expand Button (when collapsed) -->
           <button id="notepad-expand" class="hidden" title="Expand Notes">📝</button>
 
         </div>
-        <!-- end quad-pane-container -->
 
       </div>
 
-      <!-- Workspace Bar -->
       <div id="workspace-bar">
         <div id="workspace-list"></div>
         <button id="add-workspace" class="workspace-add-btn">+ New Workspace</button>
       </div>
     </div>
 
-    <!-- Empty State Overlay -->
     <div id="empty-state-overlay" class="hidden">
       <div class="empty-icon">⊞</div>
       <h2>Welcome to Quartet</h2>
@@ -242,7 +263,6 @@
       <button id="empty-create-workspace">Create Workspace</button>
     </div>
 
-    <!-- Workspace Modal -->
     <div id="modal-overlay" class="hidden">
       <div id="modal">
         <h3 id="modal-title">New Workspace</h3>
@@ -254,7 +274,6 @@
       </div>
     </div>
 
-    <!-- Tab Modal -->
     <div id="tab-modal-overlay" class="hidden">
       <div id="tab-modal">
         <h3 id="tab-modal-title">New Tab</h3>
@@ -272,7 +291,6 @@
       </div>
     </div>
 
-    <!-- Profile Modal -->
     <div id="profile-modal-overlay" class="hidden">
       <div id="profile-modal">
         <h3>Manage Session Profiles</h3>
