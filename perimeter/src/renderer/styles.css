@@ -120,7 +120,8 @@ body {
   flex-direction: column;
   background: var(--dark-bg-secondary);
   border-right: 1px solid var(--dark-border);
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   flex-shrink: 0;
 }
 
@@ -225,6 +226,36 @@ body {
   margin-top: 8px;
   font-size: 11px;
   color: var(--dark-text-muted);
+}
+
+/* Clone Repo button under the folder picker */
+.clone-btn {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--dark-bg);
+  border: 1px dashed var(--dark-border);
+  border-radius: var(--radius);
+  color: var(--dark-text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.clone-btn:hover {
+  background: var(--dark-bg-hover);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.clone-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 #git-section.hidden { display: none; }
@@ -906,7 +937,7 @@ body {
 
 #empty-state-overlay button:hover { background: var(--accent-blue-hover); }
 
-#modal-overlay, #tab-modal-overlay, #profile-modal-overlay {
+#modal-overlay, #tab-modal-overlay, #profile-modal-overlay, #clone-modal-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
   background: rgba(0, 0, 0, 0.6);
@@ -918,25 +949,26 @@ body {
 
 #modal-overlay.hidden,
 #tab-modal-overlay.hidden,
-#profile-modal-overlay.hidden { display: none; }
+#profile-modal-overlay.hidden,
+#clone-modal-overlay.hidden { display: none; }
 
-#modal, #tab-modal, #profile-modal {
+#modal, #tab-modal, #profile-modal, #clone-modal {
   background: var(--light-bg);
   border-radius: 12px;
   padding: 24px;
-  width: 440px;
+  width: 480px;
   max-width: 90%;
   box-shadow: 0 20px 60px rgba(0,0,0,0.3);
 }
 
-#modal h3, #tab-modal h3, #profile-modal h3 {
+#modal h3, #tab-modal h3, #profile-modal h3, #clone-modal h3 {
   font-size: 18px;
   font-weight: 700;
   margin-bottom: 16px;
   color: var(--light-text);
 }
 
-#modal input, #tab-modal input, #profile-modal input {
+#modal input, #tab-modal input, #profile-modal input, #clone-modal input {
   width: 100%;
   padding: 12px 14px;
   background: var(--light-bg);
@@ -951,7 +983,8 @@ body {
 
 #modal input:focus,
 #tab-modal input:focus,
-#profile-modal input:focus { border-color: var(--accent-blue); }
+#profile-modal input:focus,
+#clone-modal input:focus { border-color: var(--accent-blue); }
 
 .quick-links {
   display: flex;
@@ -1010,6 +1043,7 @@ body {
 }
 
 .btn-primary:hover { background: var(--accent-blue-hover); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-danger {
   padding: 12px 20px;
@@ -1076,6 +1110,46 @@ body {
 
 .profile-add-row input { flex: 1; margin-bottom: 0; }
 .profile-add-row button { flex-shrink: 0; }
+
+/* Clone modal-specific bits */
+.clone-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--light-bg-secondary);
+  border: 1px solid var(--light-border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+
+.clone-preview-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--light-text-secondary);
+}
+
+.clone-preview-path {
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 12px;
+  color: var(--light-text);
+  word-break: break-all;
+}
+
+.clone-status {
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.clone-status.hidden { display: none; }
+.clone-status.cloning { background: rgba(59,130,246,0.1); color: var(--accent-blue); }
+.clone-status.error   { background: var(--danger-bg); color: var(--danger); white-space: pre-wrap; font-family: 'SF Mono', Monaco, monospace; font-size: 11px; }
+.clone-status.success { background: var(--success-bg); color: var(--success); }
 
 /* ============================================
    SCROLLBAR

@@ -45,6 +45,10 @@
                 <button id="folder-browse-btn" class="action-btn">Browse</button>
               </div>
               <div id="folder-status" class="folder-status"></div>
+              <button id="clone-repo-btn" class="clone-btn">
+                <span class="btn-icon">⬇</span>
+                <span>Clone New Repo…</span>
+              </button>
             </div>
 
             <div id="git-section" class="sidebar-section hidden">
@@ -152,7 +156,7 @@
 
     <!-- Empty State Overlay -->
     <div id="empty-state-overlay" class="hidden">
-      <div class="empty-icon">⎔</div>
+      <div class="empty-icon">⧔</div>
       <h2>Welcome to Perimeter</h2>
       <p>Create a workspace to get started</p>
       <button id="empty-create-workspace">Create Workspace</button>
@@ -199,6 +203,26 @@
         </div>
         <div class="modal-actions">
           <button id="profile-modal-close" class="btn-secondary">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Clone Repo Modal -->
+    <div id="clone-modal-overlay" class="hidden">
+      <div id="clone-modal">
+        <h3>Clone Repository</h3>
+        <p class="profile-modal-desc" id="clone-modal-desc">
+          Paste a Git URL. The repo will be cloned as a folder inside your Project Folder.
+        </p>
+        <input type="text" id="clone-url-input" placeholder="https://github.com/owner/repo.git" autocomplete="off" spellcheck="false">
+        <div id="clone-destination-preview" class="clone-preview">
+          <span class="clone-preview-label">Will clone into:</span>
+          <span class="clone-preview-path" id="clone-preview-path">—</span>
+        </div>
+        <div id="clone-status" class="clone-status hidden"></div>
+        <div class="modal-actions">
+          <button id="clone-modal-cancel" class="btn-secondary">Cancel</button>
+          <button id="clone-modal-confirm" class="btn-primary">Clone</button>
         </div>
       </div>
     </div>
