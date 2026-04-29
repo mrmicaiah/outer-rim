@@ -1,5 +1,5 @@
 // ============================================
-// PERIMETER - Workspace + Browser + Git + Cloud Sync UI
+// PERIMETER - Workspace + Browser + Git + Cloud Sync + Claude Code UI
 // ============================================
 
 function uuidv4() { return crypto.randomUUID(); }
@@ -40,10 +40,19 @@ const cloneSignedOutHint = document.getElementById('clone-signed-out-hint');
 const clonePaneMyRepos = document.getElementById('clone-pane-my-repos');
 const clonePanePasteUrl = document.getElementById('clone-pane-paste-url');
 
-let cloneTab = 'my-repos'; // 'my-repos' | 'paste-url'
-let cachedRepos = null; // [{ name, full_name, clone_url, private, ... }]
+let cloneTab = 'my-repos';
+let cachedRepos = null;
 let selectedRepoUrl = null;
 let selectedRepoName = null;
+
+// Claude Code DOM
+const claudeLaunchBtn = document.getElementById('claude-launch-btn');
+const claudeLaunchSkipBtn = document.getElementById('claude-launch-skip-btn');
+const claudeStatusBadge = document.getElementById('claude-status-badge');
+const claudeSectionHint = document.getElementById('claude-section-hint');
+const claudeChatInput = document.getElementById('claude-chat-input');
+const claudeChatSend = document.getElementById('claude-chat-send');
+const claudeChatStop = document.getElementById('claude-chat-stop');
 
 // ============================================
 // INIT
@@ -71,11 +80,137 @@ async function init() {
   updateEmptyState();
   setupEventListeners();
 
-  if (window.PerimeterTerminals) window.PerimeterTerminals.init();
+  if (window.PerimeterTerminals) {
+    window.PerimeterTerminals.init();
+    // Subscribe to terminal-state changes so we can enable/disable the Claude
+    // Code Launch buttons + chat input as terminals open/close + Claude
+    // Code activates.
+    window.PerimeterTerminals.onStateChange((state) => updateClaudeUI(state));
+  }
+
+  // Initial render based on whatever the terminal state is right now (probably no terminal yet).
+  updateClaudeUI(window.PerimeterTerminals?.getActiveState() || { hasTerminal: false, claudeActive: false });
 
   window.perimeter.onMenuToggleDevTools(() => toggleActiveWebviewDevTools());
 
   initSync().catch((err) => console.error('[sync] initSync failed:', err));
+}
+
+// ============================================
+// CLAUDE CODE (Launch buttons + chat input + interrupt)
+// ============================================
+
+// Update everything Claude-Code-related based on:
+//   - whether there's an active terminal
+//   - whether Claude Code is detected as running in it
+//   - whether the workspace has a Project Folder set
+function updateClaudeUI(state) {
+  const hasTerminal = !!state?.hasTerminal;
+  const claudeActive = !!state?.claudeActive;
+  const hasFolder = !!(activeWorkspace?.folderPath);
+
+  // Status badge
+  if (claudeActive) {
+    claudeStatusBadge.className = 'status-badge running';
+    claudeStatusBadge.textContent = 'Running';
+  } else if (hasTerminal) {
+    claudeStatusBadge.className = 'status-badge signed-out';
+    claudeStatusBadge.textContent = 'Idle';
+  } else {
+    claudeStatusBadge.className = 'status-badge signed-out';
+    claudeStatusBadge.textContent = 'Idle';
+  }
+
+  // Hint text under the section title.
+  if (!hasFolder) {
+    claudeSectionHint.textContent = 'Set or clone a Project Folder first to enable Claude Code.';
+  } else if (!hasTerminal) {
+    claudeSectionHint.textContent = 'Open a terminal (click + above the terminal pane) to launch Claude Code.';
+  } else if (claudeActive) {
+    claudeSectionHint.textContent = 'Claude Code is running. Use the chat box at the bottom of the terminal pane.';
+  } else {
+    claudeSectionHint.textContent = 'Press ▶ Launch to start Claude Code in the active terminal.';
+  }
+
+  // Buttons:
+  //   disabled if no folder OR no terminal OR claude already running
+  const canLaunch = hasFolder && hasTerminal && !claudeActive;
+  claudeLaunchBtn.disabled = !canLaunch;
+  claudeLaunchSkipBtn.disabled = !canLaunch;
+
+  // If there's no folder, clicking a disabled launch button should open the
+  // clone dialog (UX shortcut). We attach a special class so the click
+  // handler knows what to do.
+  claudeLaunchBtn.dataset.disabledReason = !hasFolder ? 'no-folder'
+    : !hasTerminal ? 'no-terminal'
+    : claudeActive ? 'already-running'
+    : '';
+  claudeLaunchSkipBtn.dataset.disabledReason = claudeLaunchBtn.dataset.disabledReason;
+
+  // Chat input + buttons
+  if (!hasFolder) {
+    claudeChatInput.disabled = true;
+    claudeChatInput.placeholder = 'Set a Project Folder, open a terminal, and click ▶ Launch to chat…';
+  } else if (!hasTerminal) {
+    claudeChatInput.disabled = true;
+    claudeChatInput.placeholder = 'Open a terminal to chat with Claude Code…';
+  } else if (!claudeActive) {
+    claudeChatInput.disabled = true;
+    claudeChatInput.placeholder = 'Click ▶ Launch to start Claude Code, then chat here…';
+  } else {
+    claudeChatInput.disabled = false;
+    claudeChatInput.placeholder = 'Type to Claude Code…  (Enter sends, Shift+Enter newline)';
+  }
+  claudeChatSend.disabled = claudeChatInput.disabled;
+  claudeChatStop.disabled = !hasTerminal; // stop is useful even before claude is detected,
+                                          // so user can Esc out of any prompt that's stuck
+}
+
+// Send the launch command to the active terminal.
+function launchClaudeCode({ skipPermissions = false } = {}) {
+  const reason = (skipPermissions ? claudeLaunchSkipBtn : claudeLaunchBtn).dataset.disabledReason;
+  if (reason === 'no-folder') {
+    // Convenience: clicking a disabled launch button when no folder is set
+    // shortcuts to the clone dialog.
+    openCloneModal();
+    return;
+  }
+  if (reason) return; // shouldn't happen since button is disabled, but be safe
+
+  if (!activeWorkspace?.folderPath) return;
+  const folder = activeWorkspace.folderPath;
+
+  // Build the command. We cd first so claude opens with the right cwd even if
+  // the terminal was started elsewhere. Quote the folder in case of spaces.
+  const escaped = folder.replace(/"/g, '\\"');
+  const cmd = skipPermissions
+    ? `cd "${escaped}" && claude --dangerously-skip-permissions\n`
+    : `cd "${escaped}" && claude\n`;
+
+  if (window.PerimeterTerminals) {
+    window.PerimeterTerminals.sendToActive(cmd);
+  }
+}
+
+function sendChatMessage() {
+  if (claudeChatInput.disabled) return;
+  const text = claudeChatInput.value;
+  if (!text.trim()) return;
+
+  // Send the message + Enter so Claude Code receives it as a complete line.
+  if (window.PerimeterTerminals) {
+    window.PerimeterTerminals.sendToActive(text + '\n');
+  }
+
+  // Clear the box and reset its height
+  claudeChatInput.value = '';
+  claudeChatInput.style.height = '';
+}
+
+function interruptClaudeCode() {
+  if (window.PerimeterTerminals) {
+    window.PerimeterTerminals.interruptActive();
+  }
 }
 
 // ============================================
@@ -154,6 +289,11 @@ function updateSidebar() {
     folderStatus.textContent = '';
     gitSection.classList.add('hidden');
     window.__perimeterCurrentFolder = undefined;
+  }
+
+  // Folder change can flip the Claude Code section state.
+  if (window.PerimeterTerminals) {
+    updateClaudeUI(window.PerimeterTerminals.getActiveState());
   }
 }
 
@@ -295,7 +435,6 @@ function updateSyncUI(status) {
     signedIn.classList.add('hidden');
   }
 
-  // The clone dialog's My Repos tab shows a different state when signed-out.
   if (cloneSignedOutHint) {
     cloneSignedOutHint.classList.toggle('hidden', !!status.signedIn);
   }
@@ -397,7 +536,6 @@ function resolveCloneParent() {
 }
 
 function openCloneModal() {
-  // Reset state
   cloneTab = 'my-repos';
   setCloneTab('my-repos');
   cloneUrlInput.value = '';
@@ -412,12 +550,11 @@ function openCloneModal() {
 
   cloneModalOverlay.classList.remove('hidden');
 
-  // Kick off repo fetch if signed in and we don't have them cached.
   if (currentSyncStatus.signedIn) {
     if (!cachedRepos) loadMyRepos();
     else renderRepoList();
   } else {
-    renderRepoList(); // shows the signed-out hint inside
+    renderRepoList();
   }
 }
 
@@ -430,9 +567,7 @@ function setCloneTab(tab) {
   document.querySelectorAll('.clone-tab').forEach(b => b.classList.toggle('active', b.dataset.cloneTab === tab));
   clonePaneMyRepos.classList.toggle('hidden', tab !== 'my-repos');
   clonePanePasteUrl.classList.toggle('hidden', tab !== 'paste-url');
-  // Re-evaluate the destination preview because the source might have changed.
   updateClonePreview();
-  // Focus the right input
   if (tab === 'my-repos') cloneRepoSearch.focus();
   else cloneUrlInput.focus();
 }
@@ -1216,6 +1351,53 @@ function setupEventListeners() {
     b.addEventListener('click', () => setCloneTab(b.dataset.cloneTab));
   });
   cloneModalOverlay.addEventListener('click', (e) => { if (e.target === cloneModalOverlay && !cloneCancelBtn.disabled) closeCloneModal(); });
+
+  // Claude Code launch buttons.
+  // Even when disabled, clicking the button can still run — we use
+  // pointer-events on disabled buttons via a data-disabled-reason check.
+  // The trick: disabled <button> doesn't fire click. So we attach click on
+  // the parent so we still get the event when the button is disabled.
+  claudeLaunchBtn.parentElement.addEventListener('click', (e) => {
+    if (e.target.closest('#claude-launch-btn')) {
+      // Only trigger when the button is the target. If button is disabled
+      // and reason is 'no-folder', open clone modal.
+      const btn = claudeLaunchBtn;
+      if (btn.disabled && btn.dataset.disabledReason === 'no-folder') {
+        openCloneModal();
+      } else if (!btn.disabled) {
+        launchClaudeCode({ skipPermissions: false });
+      }
+      return;
+    }
+    if (e.target.closest('#claude-launch-skip-btn')) {
+      const btn = claudeLaunchSkipBtn;
+      if (btn.disabled && btn.dataset.disabledReason === 'no-folder') {
+        openCloneModal();
+      } else if (!btn.disabled) {
+        launchClaudeCode({ skipPermissions: true });
+      }
+    }
+  });
+  // Disabled buttons don't fire clicks in Chromium — work around so the
+  // "open clone dialog when no folder" shortcut still works.
+  [claudeLaunchBtn, claudeLaunchSkipBtn].forEach(btn => {
+    btn.style.pointerEvents = 'auto';
+  });
+
+  // Claude chat input
+  claudeChatInput.addEventListener('input', () => {
+    // Auto-grow up to max-height (CSS handles the cap with overflow)
+    claudeChatInput.style.height = 'auto';
+    claudeChatInput.style.height = Math.min(claudeChatInput.scrollHeight, 160) + 'px';
+  });
+  claudeChatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChatMessage();
+    }
+  });
+  claudeChatSend.addEventListener('click', sendChatMessage);
+  claudeChatStop.addEventListener('click', interruptClaudeCode);
 
   document.querySelector('.pane-add-tab[data-pane="right"]').addEventListener('click', openTabModal);
 
