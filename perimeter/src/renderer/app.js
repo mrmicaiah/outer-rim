@@ -29,6 +29,12 @@ const workspaceNameInput = document.getElementById('workspace-name-input');
 const tabModalOverlay = document.getElementById('tab-modal-overlay');
 const tabUrlInput = document.getElementById('tab-url-input');
 const profileModalOverlay = document.getElementById('profile-modal-overlay');
+const cloneModalOverlay = document.getElementById('clone-modal-overlay');
+const cloneUrlInput = document.getElementById('clone-url-input');
+const clonePreviewPath = document.getElementById('clone-preview-path');
+const cloneStatusEl = document.getElementById('clone-status');
+const cloneConfirmBtn = document.getElementById('clone-modal-confirm');
+const cloneCancelBtn = document.getElementById('clone-modal-cancel');
 
 // ============================================
 // INIT
@@ -56,7 +62,6 @@ async function init() {
   updateEmptyState();
   setupEventListeners();
 
-  // Initialize the terminal module (xterm.js lives in its own file)
   if (window.PerimeterTerminals) window.PerimeterTerminals.init();
 
   window.perimeter.onMenuToggleDevTools(() => toggleActiveWebviewDevTools());
@@ -125,8 +130,6 @@ function updateSidebar() {
     folderInput.value = folder || '';
     folderInput.placeholder = folder ? '' : 'Select a folder...';
 
-    // Make the folder available to the terminal module so new terminals
-    // open in the workspace's project directory.
     window.__perimeterCurrentFolder = folder || undefined;
 
     if (folder) {
@@ -251,6 +254,115 @@ async function browseFolder() {
 }
 
 // ============================================
+// CLONE REPO
+// ============================================
+
+// Mirror of the parser in main.js so we can show a live preview in the UI.
+function repoNameFromUrl(url) {
+  if (!url) return null;
+  let trimmed = url.trim();
+  trimmed = trimmed.replace(/\.git$/i, '').replace(/\/$/, '');
+  const lastSlash = trimmed.lastIndexOf('/');
+  const lastColon = trimmed.lastIndexOf(':');
+  const cut = Math.max(lastSlash, lastColon);
+  if (cut === -1) return null;
+  const name = trimmed.substring(cut + 1);
+  if (!name || /[^A-Za-z0-9._-]/.test(name)) return null;
+  return name;
+}
+
+function openCloneModal() {
+  cloneUrlInput.value = '';
+  updateClonePreview();
+  cloneStatusEl.className = 'clone-status hidden';
+  cloneStatusEl.textContent = '';
+  cloneConfirmBtn.disabled = false;
+  cloneCancelBtn.disabled = false;
+  cloneConfirmBtn.textContent = 'Clone';
+  cloneModalOverlay.classList.remove('hidden');
+  cloneUrlInput.focus();
+}
+
+function closeCloneModal() {
+  cloneModalOverlay.classList.add('hidden');
+}
+
+// What parent path will the clone use?
+function resolveCloneParent() {
+  // Active workspace's folder takes precedence; else default to ~/Projects.
+  const workspaceFolder = activeWorkspace?.folderPath?.trim();
+  if (workspaceFolder) return workspaceFolder;
+  return '~/Projects';
+}
+
+function updateClonePreview() {
+  const url = cloneUrlInput.value.trim();
+  const repoName = repoNameFromUrl(url);
+  const parent = resolveCloneParent();
+
+  if (!url) {
+    clonePreviewPath.textContent = '—';
+    cloneConfirmBtn.disabled = true;
+  } else if (!repoName) {
+    clonePreviewPath.textContent = '(could not parse repo name from URL)';
+    cloneConfirmBtn.disabled = true;
+  } else {
+    clonePreviewPath.textContent = `${parent}/${repoName}`;
+    cloneConfirmBtn.disabled = false;
+  }
+}
+
+async function confirmClone() {
+  const url = cloneUrlInput.value.trim();
+  if (!url) return;
+
+  cloneConfirmBtn.disabled = true;
+  cloneCancelBtn.disabled = true;
+  cloneConfirmBtn.textContent = 'Cloning…';
+  cloneStatusEl.className = 'clone-status cloning';
+  cloneStatusEl.textContent = 'Running git clone… (large repos may take a minute)';
+
+  // Use workspace's folder as parent if set; else main process will default to ~/Projects.
+  const parentPath = activeWorkspace?.folderPath || null;
+
+  try {
+    const result = await window.perimeter.git.clone({ url, parentPath });
+    if (result.success) {
+      cloneStatusEl.className = 'clone-status success';
+      cloneStatusEl.textContent = `✓ Cloned to ${result.clonedPath}`;
+      cloneConfirmBtn.textContent = 'Done';
+
+      // If the workspace had no folder set, set it to the clone destination
+      // so subsequent terminal/git operations use the new repo automatically.
+      if (activeWorkspace && !activeWorkspace.folderPath) {
+        activeWorkspace.folderPath = result.clonedPath;
+        await window.perimeter.workspace.update(activeWorkspace);
+        updateSidebar();
+      } else {
+        // Refresh git status in case the user cloned into the same workspace.
+        checkGitStatus();
+      }
+
+      setTimeout(() => {
+        closeCloneModal();
+      }, 1200);
+    } else {
+      cloneStatusEl.className = 'clone-status error';
+      cloneStatusEl.textContent = result.error || 'Clone failed';
+      cloneConfirmBtn.disabled = false;
+      cloneCancelBtn.disabled = false;
+      cloneConfirmBtn.textContent = 'Retry';
+    }
+  } catch (err) {
+    cloneStatusEl.className = 'clone-status error';
+    cloneStatusEl.textContent = err.message || 'Clone failed';
+    cloneConfirmBtn.disabled = false;
+    cloneCancelBtn.disabled = false;
+    cloneConfirmBtn.textContent = 'Retry';
+  }
+}
+
+// ============================================
 // PROFILES
 // ============================================
 
@@ -346,10 +458,9 @@ function startResize(type, e, extras = {}) {
 
 function stopResize() {
   currentResizer = null;
-  resizeOverlay.style.display = 'none';
+  if (resizeOverlay) resizeOverlay.style.display = 'none';
   document.body.style.cursor = '';
   document.body.style.userSelect = '';
-  // After a resize, refit terminals so xterm doesn't show stale dims
   if (window.PerimeterTerminals) window.PerimeterTerminals.refitAll();
 }
 
@@ -966,6 +1077,8 @@ function confirmTabModal() {
 function setupEventListeners() {
   document.addEventListener('mousemove', handleMouseMove);
   document.addEventListener('mouseup', stopResize);
+  document.addEventListener('mouseleave', stopResize);
+  window.addEventListener('blur', stopResize);
 
   document.getElementById('devtools-btn').addEventListener('click', toggleActiveWebviewDevTools);
 
@@ -978,6 +1091,14 @@ function setupEventListeners() {
   document.getElementById('git-push-btn').addEventListener('click', gitPush);
   document.getElementById('git-pull-btn').addEventListener('click', gitPull);
   document.getElementById('git-refresh-btn').addEventListener('click', checkGitStatus);
+
+  // Clone Repo
+  document.getElementById('clone-repo-btn').addEventListener('click', openCloneModal);
+  cloneCancelBtn.addEventListener('click', closeCloneModal);
+  cloneConfirmBtn.addEventListener('click', confirmClone);
+  cloneUrlInput.addEventListener('input', updateClonePreview);
+  cloneUrlInput.addEventListener('keypress', (e) => { if (e.key === 'Enter' && !cloneConfirmBtn.disabled) confirmClone(); });
+  cloneModalOverlay.addEventListener('click', (e) => { if (e.target === cloneModalOverlay && !cloneCancelBtn.disabled) closeCloneModal(); });
 
   document.querySelector('.pane-add-tab[data-pane="right"]').addEventListener('click', openTabModal);
 
@@ -1027,13 +1148,9 @@ function setupEventListeners() {
     btn.addEventListener('click', () => { createTab(btn.dataset.url); closeTabModal(); });
   });
 
-  // Keyboard shortcuts — Cmd+T/W are handled by the Terminal menu so they
-  // work regardless of focus. We only add the browser-specific ones here.
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'n') { e.preventDefault(); openCreateWorkspaceModal(); }
     if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
-      // Only intercept Cmd+R when the browser pane is focused — otherwise
-      // let it flow to the terminal if xterm has focus.
       const ae = document.activeElement;
       if (ae && (ae.id === 'notepad-content' || ae.closest('.terminal-instance'))) return;
       e.preventDefault(); refreshActiveTab();
@@ -1044,7 +1161,13 @@ function setupEventListeners() {
       nav?.focus(); nav?.select();
     }
     if (e.key === 'F12') { e.preventDefault(); toggleActiveWebviewDevTools(); }
-    if (e.key === 'Escape') { closeWorkspaceModal(); closeTabModal(); closeProfileModal(); }
+    if (e.key === 'Escape') {
+      stopResize();
+      closeWorkspaceModal();
+      closeTabModal();
+      closeProfileModal();
+      if (!cloneCancelBtn.disabled) closeCloneModal();
+    }
   });
 }
 
