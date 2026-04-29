@@ -1,18 +1,15 @@
 // ============================================
-// PERIMETER - Workspace + Browser + Git UI
+// PERIMETER - Workspace + Browser + Git + Cloud Sync UI
 // ============================================
 
 function uuidv4() { return crypto.randomUUID(); }
 
-// State
 let workspaces = [];
 let activeWorkspace = null;
 let profiles = [];
 
-// Webview tracking
 const createdWebviews = new Set();
 
-// Resizer state
 let currentResizer = null;
 let resizeOverlay = null;
 
@@ -29,12 +26,24 @@ const workspaceNameInput = document.getElementById('workspace-name-input');
 const tabModalOverlay = document.getElementById('tab-modal-overlay');
 const tabUrlInput = document.getElementById('tab-url-input');
 const profileModalOverlay = document.getElementById('profile-modal-overlay');
+
+// Clone dialog DOM
 const cloneModalOverlay = document.getElementById('clone-modal-overlay');
 const cloneUrlInput = document.getElementById('clone-url-input');
 const clonePreviewPath = document.getElementById('clone-preview-path');
 const cloneStatusEl = document.getElementById('clone-status');
 const cloneConfirmBtn = document.getElementById('clone-modal-confirm');
 const cloneCancelBtn = document.getElementById('clone-modal-cancel');
+const cloneRepoSearch = document.getElementById('clone-repo-search');
+const cloneRepoList = document.getElementById('clone-repo-list');
+const cloneSignedOutHint = document.getElementById('clone-signed-out-hint');
+const clonePaneMyRepos = document.getElementById('clone-pane-my-repos');
+const clonePanePasteUrl = document.getElementById('clone-pane-paste-url');
+
+let cloneTab = 'my-repos'; // 'my-repos' | 'paste-url'
+let cachedRepos = null; // [{ name, full_name, clone_url, private, ... }]
+let selectedRepoUrl = null;
+let selectedRepoName = null;
 
 // ============================================
 // INIT
@@ -65,6 +74,8 @@ async function init() {
   if (window.PerimeterTerminals) window.PerimeterTerminals.init();
 
   window.perimeter.onMenuToggleDevTools(() => toggleActiveWebviewDevTools());
+
+  initSync().catch((err) => console.error('[sync] initSync failed:', err));
 }
 
 // ============================================
@@ -77,7 +88,6 @@ function migrateWorkspaceStructure(workspace) {
     window.perimeter.workspace.update(workspace);
     return;
   }
-
   const rightPane = workspace.panes.right;
   if (rightPane && !rightPane.profiles) {
     const oldProfileId = rightPane.profileId || 'default';
@@ -90,7 +100,6 @@ function migrateWorkspaceStructure(workspace) {
     }
     window.perimeter.workspace.update(workspace);
   }
-
   if (!workspace.panes.right) {
     workspace.panes.right = { activeProfileId: 'default', profiles: { 'default': { tabs: [], activeTabId: null } } };
     window.perimeter.workspace.update(workspace);
@@ -115,7 +124,7 @@ function getCurrentProfileId() {
 }
 
 // ============================================
-// SIDEBAR - Workspace, Folder, Git
+// SIDEBAR
 // ============================================
 
 function updateSidebar() {
@@ -129,9 +138,7 @@ function updateSidebar() {
     const folder = activeWorkspace.folderPath || '';
     folderInput.value = folder || '';
     folderInput.placeholder = folder ? '' : 'Select a folder...';
-
     window.__perimeterCurrentFolder = folder || undefined;
-
     if (folder) {
       folderStatus.textContent = '';
       gitSection.classList.remove('hidden');
@@ -152,15 +159,12 @@ function updateSidebar() {
 
 async function checkGitStatus() {
   if (!activeWorkspace?.folderPath) return;
-
   const badge = document.getElementById('git-status-badge');
   const statusDisplay = document.getElementById('git-status-display');
   const statusText = statusDisplay.querySelector('.git-status-text');
-
   badge.textContent = '...';
   badge.className = 'status-badge';
   statusText.textContent = 'Checking status...';
-
   try {
     const result = await window.perimeter.git.status(activeWorkspace.folderPath);
     if (result.success) {
@@ -191,15 +195,12 @@ async function checkGitStatus() {
 
 async function gitPush() {
   if (!activeWorkspace?.folderPath) return;
-
   const btn = document.getElementById('git-push-btn');
   const statusText = document.querySelector('#git-status-display .git-status-text');
   const commitInput = document.getElementById('commit-message');
-
   btn.disabled = true;
   btn.querySelector('.btn-text').textContent = 'Pushing...';
   statusText.textContent = 'Adding and committing...';
-
   try {
     const message = commitInput.value.trim() || undefined;
     const result = await window.perimeter.git.push(activeWorkspace.folderPath, message);
@@ -213,21 +214,17 @@ async function gitPush() {
   } catch (err) {
     statusText.textContent = '✗ ' + err.message;
   }
-
   btn.disabled = false;
   btn.querySelector('.btn-text').textContent = 'Push';
 }
 
 async function gitPull() {
   if (!activeWorkspace?.folderPath) return;
-
   const btn = document.getElementById('git-pull-btn');
   const statusText = document.querySelector('#git-status-display .git-status-text');
-
   btn.disabled = true;
   btn.querySelector('.btn-text').textContent = 'Pulling...';
   statusText.textContent = 'Pulling from remote...';
-
   try {
     const result = await window.perimeter.git.pull(activeWorkspace.folderPath);
     if (result.success) {
@@ -239,7 +236,6 @@ async function gitPull() {
   } catch (err) {
     statusText.textContent = '✗ ' + err.message;
   }
-
   btn.disabled = false;
   btn.querySelector('.btn-text').textContent = 'Pull';
 }
@@ -254,10 +250,133 @@ async function browseFolder() {
 }
 
 // ============================================
-// CLONE REPO
+// CLOUD SYNC (renderer)
 // ============================================
 
-// Mirror of the parser in main.js so we can show a live preview in the UI.
+function formatRelative(iso) {
+  if (!iso) return 'Never synced';
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const sec = Math.round((now - then) / 1000);
+  if (sec < 60) return `Synced ${sec}s ago`;
+  if (sec < 3600) return `Synced ${Math.round(sec / 60)}m ago`;
+  if (sec < 86400) return `Synced ${Math.round(sec / 3600)}h ago`;
+  return `Synced ${Math.round(sec / 86400)}d ago`;
+}
+
+let currentSyncStatus = { signedIn: false };
+
+function updateSyncUI(status) {
+  currentSyncStatus = status || { signedIn: false };
+  const badge = document.getElementById('sync-status-badge');
+  const signedOut = document.getElementById('sync-signed-out');
+  const signedIn = document.getElementById('sync-signed-in');
+  const accountName = document.getElementById('sync-account-name');
+  const lastSyncedText = document.getElementById('sync-last-synced-text');
+  const conflictBanner = document.getElementById('sync-conflict-banner');
+
+  if (!badge || !signedOut || !signedIn) return;
+
+  badge.className = 'status-badge ' + (status.status || 'signed-out');
+  const badgeText = {
+    idle: 'Synced', pushing: 'Pushing', pulling: 'Pulling',
+    conflict: 'Conflict', error: 'Error', 'signed-out': 'Off',
+  }[status.status] || '…';
+  badge.textContent = badgeText;
+
+  if (status.signedIn) {
+    signedOut.classList.add('hidden');
+    signedIn.classList.remove('hidden');
+    if (accountName) accountName.textContent = '@' + (status.githubLogin || 'user');
+    if (lastSyncedText) lastSyncedText.textContent = formatRelative(status.lastSyncedAt);
+    if (conflictBanner) conflictBanner.classList.toggle('hidden', status.status !== 'conflict');
+  } else {
+    signedOut.classList.remove('hidden');
+    signedIn.classList.add('hidden');
+  }
+
+  // The clone dialog's My Repos tab shows a different state when signed-out.
+  if (cloneSignedOutHint) {
+    cloneSignedOutHint.classList.toggle('hidden', !!status.signedIn);
+  }
+}
+
+async function reloadFromStore() {
+  workspaces = await window.perimeter.workspace.getAll();
+  const active = await window.perimeter.workspace.getActive();
+  if (active) activeWorkspace = workspaces.find(w => w.id === active.id);
+  profiles = await window.perimeter.profiles.getAll();
+  if (activeWorkspace) migrateWorkspaceStructure(activeWorkspace);
+  document.querySelectorAll('.pane-webview-container webview').forEach(wv => wv.remove());
+  createdWebviews.clear();
+  updateProfileSelectors();
+  renderWorkspaces();
+  renderBrowserPane();
+  updateNotepad();
+  updateSidebar();
+  updateEmptyState();
+}
+
+async function initSync() {
+  const status = await window.perimeter.sync.getStatus();
+  updateSyncUI(status);
+
+  window.perimeter.sync.onStatus((status) => updateSyncUI(status));
+  window.perimeter.sync.onRemoteApplied(() => reloadFromStore());
+
+  const signinBtn = document.getElementById('sync-signin-btn');
+  if (signinBtn) signinBtn.addEventListener('click', async () => {
+    signinBtn.disabled = true;
+    signinBtn.innerHTML = '<span class="btn-icon">⏳</span> Waiting for browser…';
+    try {
+      const result = await window.perimeter.sync.signIn();
+      if (result.error) alert('Sign-in failed: ' + result.error);
+      else if (result.ok || result.alreadySignedIn) await reloadFromStore();
+    } catch (err) {
+      alert('Sign-in error: ' + err.message);
+    }
+    signinBtn.disabled = false;
+    signinBtn.innerHTML = '<span class="btn-icon">🔑</span> Sign in with GitHub';
+  });
+
+  const signoutBtn = document.getElementById('sync-signout-btn');
+  if (signoutBtn) signoutBtn.addEventListener('click', async () => {
+    if (!confirm('Sign out of cloud sync? Your local data stays, but will stop syncing.')) return;
+    await window.perimeter.sync.signOut();
+    cachedRepos = null;
+  });
+
+  const syncNowBtn = document.getElementById('sync-now-btn');
+  if (syncNowBtn) syncNowBtn.addEventListener('click', async () => {
+    syncNowBtn.disabled = true;
+    const original = syncNowBtn.textContent;
+    syncNowBtn.textContent = '⏳ Syncing…';
+    try {
+      await window.perimeter.sync.syncNow({ direction: 'pull' });
+      await window.perimeter.sync.syncNow({});
+    } catch (err) { console.error('[sync] syncNow failed', err); }
+    syncNowBtn.disabled = false;
+    syncNowBtn.textContent = original;
+  });
+
+  const pullForceBtn = document.getElementById('sync-pull-force-btn');
+  if (pullForceBtn) pullForceBtn.addEventListener('click', async () => {
+    if (!confirm('This will overwrite your local state with the cloud copy. Continue?')) return;
+    await window.perimeter.sync.pullForce();
+    await reloadFromStore();
+  });
+
+  const pushForceBtn = document.getElementById('sync-push-force-btn');
+  if (pushForceBtn) pushForceBtn.addEventListener('click', async () => {
+    if (!confirm('This will overwrite the cloud copy with your local state. Continue?')) return;
+    await window.perimeter.sync.pushForce();
+  });
+}
+
+// ============================================
+// CLONE REPO (with My Repos browser)
+// ============================================
+
 function repoNameFromUrl(url) {
   if (!url) return null;
   let trimmed = url.trim();
@@ -271,34 +390,119 @@ function repoNameFromUrl(url) {
   return name;
 }
 
+function resolveCloneParent() {
+  const workspaceFolder = activeWorkspace?.folderPath?.trim();
+  if (workspaceFolder) return workspaceFolder;
+  return '~/Projects';
+}
+
 function openCloneModal() {
+  // Reset state
+  cloneTab = 'my-repos';
+  setCloneTab('my-repos');
   cloneUrlInput.value = '';
-  updateClonePreview();
+  cloneRepoSearch.value = '';
+  selectedRepoUrl = null;
+  selectedRepoName = null;
   cloneStatusEl.className = 'clone-status hidden';
   cloneStatusEl.textContent = '';
-  cloneConfirmBtn.disabled = false;
   cloneCancelBtn.disabled = false;
   cloneConfirmBtn.textContent = 'Clone';
+  updateClonePreview();
+
   cloneModalOverlay.classList.remove('hidden');
-  cloneUrlInput.focus();
+
+  // Kick off repo fetch if signed in and we don't have them cached.
+  if (currentSyncStatus.signedIn) {
+    if (!cachedRepos) loadMyRepos();
+    else renderRepoList();
+  } else {
+    renderRepoList(); // shows the signed-out hint inside
+  }
 }
 
 function closeCloneModal() {
   cloneModalOverlay.classList.add('hidden');
 }
 
-// What parent path will the clone use?
-function resolveCloneParent() {
-  // Active workspace's folder takes precedence; else default to ~/Projects.
-  const workspaceFolder = activeWorkspace?.folderPath?.trim();
-  if (workspaceFolder) return workspaceFolder;
-  return '~/Projects';
+function setCloneTab(tab) {
+  cloneTab = tab;
+  document.querySelectorAll('.clone-tab').forEach(b => b.classList.toggle('active', b.dataset.cloneTab === tab));
+  clonePaneMyRepos.classList.toggle('hidden', tab !== 'my-repos');
+  clonePanePasteUrl.classList.toggle('hidden', tab !== 'paste-url');
+  // Re-evaluate the destination preview because the source might have changed.
+  updateClonePreview();
+  // Focus the right input
+  if (tab === 'my-repos') cloneRepoSearch.focus();
+  else cloneUrlInput.focus();
+}
+
+async function loadMyRepos() {
+  cloneRepoList.innerHTML = '<div class="clone-repo-loading">Loading your repos…</div>';
+  try {
+    const result = await window.perimeter.github.listRepos();
+    if (!result.success) {
+      cloneRepoList.innerHTML = `<div class="clone-repo-empty">✗ ${escapeHtml(result.error)}</div>`;
+      return;
+    }
+    cachedRepos = result.repos || [];
+    renderRepoList();
+  } catch (err) {
+    cloneRepoList.innerHTML = `<div class="clone-repo-empty">✗ ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderRepoList() {
+  if (!currentSyncStatus.signedIn) {
+    cloneRepoList.innerHTML = '<div class="clone-repo-empty">Sign in to see your repos.</div>';
+    return;
+  }
+  if (!cachedRepos) {
+    cloneRepoList.innerHTML = '<div class="clone-repo-loading">Loading your repos…</div>';
+    return;
+  }
+  const q = (cloneRepoSearch.value || '').trim().toLowerCase();
+  const filtered = q
+    ? cachedRepos.filter(r => r.full_name.toLowerCase().includes(q) || (r.description || '').toLowerCase().includes(q))
+    : cachedRepos;
+
+  if (filtered.length === 0) {
+    cloneRepoList.innerHTML = `<div class="clone-repo-empty">No matching repos.</div>`;
+    return;
+  }
+
+  cloneRepoList.innerHTML = filtered.map(r => `
+    <div class="clone-repo-item ${r.clone_url === selectedRepoUrl ? 'selected' : ''}" data-url="${escapeHtml(r.clone_url)}" data-name="${escapeHtml(r.name)}">
+      <div class="clone-repo-name">
+        ${escapeHtml(r.full_name)}
+        ${r.private ? '<span class="clone-repo-private">private</span>' : ''}
+      </div>
+      ${r.description ? `<div class="clone-repo-desc">${escapeHtml(r.description)}</div>` : ''}
+    </div>
+  `).join('');
+
+  cloneRepoList.querySelectorAll('.clone-repo-item').forEach(el => {
+    el.addEventListener('click', () => {
+      selectedRepoUrl = el.dataset.url;
+      selectedRepoName = el.dataset.name;
+      cloneRepoList.querySelectorAll('.clone-repo-item').forEach(x => x.classList.remove('selected'));
+      el.classList.add('selected');
+      updateClonePreview();
+    });
+  });
 }
 
 function updateClonePreview() {
-  const url = cloneUrlInput.value.trim();
-  const repoName = repoNameFromUrl(url);
   const parent = resolveCloneParent();
+
+  let url = '', repoName = null;
+  if (cloneTab === 'my-repos') {
+    url = selectedRepoUrl || '';
+    repoName = selectedRepoName;
+  } else {
+    url = cloneUrlInput.value.trim();
+    repoName = repoNameFromUrl(url);
+  }
 
   if (!url) {
     clonePreviewPath.textContent = '—';
@@ -313,7 +517,10 @@ function updateClonePreview() {
 }
 
 async function confirmClone() {
-  const url = cloneUrlInput.value.trim();
+  let url = '';
+  if (cloneTab === 'my-repos') url = selectedRepoUrl || '';
+  else url = cloneUrlInput.value.trim();
+
   if (!url) return;
 
   cloneConfirmBtn.disabled = true;
@@ -322,7 +529,6 @@ async function confirmClone() {
   cloneStatusEl.className = 'clone-status cloning';
   cloneStatusEl.textContent = 'Running git clone… (large repos may take a minute)';
 
-  // Use workspace's folder as parent if set; else main process will default to ~/Projects.
   const parentPath = activeWorkspace?.folderPath || null;
 
   try {
@@ -331,21 +537,14 @@ async function confirmClone() {
       cloneStatusEl.className = 'clone-status success';
       cloneStatusEl.textContent = `✓ Cloned to ${result.clonedPath}`;
       cloneConfirmBtn.textContent = 'Done';
-
-      // If the workspace had no folder set, set it to the clone destination
-      // so subsequent terminal/git operations use the new repo automatically.
       if (activeWorkspace && !activeWorkspace.folderPath) {
         activeWorkspace.folderPath = result.clonedPath;
         await window.perimeter.workspace.update(activeWorkspace);
         updateSidebar();
       } else {
-        // Refresh git status in case the user cloned into the same workspace.
         checkGitStatus();
       }
-
-      setTimeout(() => {
-        closeCloneModal();
-      }, 1200);
+      setTimeout(() => closeCloneModal(), 1200);
     } else {
       cloneStatusEl.className = 'clone-status error';
       cloneStatusEl.textContent = result.error || 'Clone failed';
@@ -393,7 +592,6 @@ function renderProfileList() {
       </div>
     </div>
   `).join('');
-
   list.querySelectorAll('.profile-item-actions .delete').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const item = e.target.closest('.profile-item');
@@ -409,10 +607,8 @@ async function addProfile() {
   const input = document.getElementById('new-profile-input');
   const name = input.value.trim();
   if (!name) return;
-
   const profile = await window.perimeter.profiles.create(name);
   profiles.push(profile);
-
   input.value = '';
   renderProfileList();
   updateProfileSelectors();
@@ -421,7 +617,6 @@ async function addProfile() {
 async function deleteProfile(id) {
   await window.perimeter.profiles.delete(id);
   profiles = profiles.filter(p => p.id !== id);
-
   if (activeWorkspace) {
     const pane = activeWorkspace.panes.right;
     if (pane.profiles?.[id]) {
@@ -435,7 +630,6 @@ async function deleteProfile(id) {
     if (pane.activeProfileId === id) pane.activeProfileId = 'default';
     await window.perimeter.workspace.update(activeWorkspace);
   }
-
   renderProfileList();
   updateProfileSelectors();
   renderBrowserPane();
@@ -466,9 +660,7 @@ function stopResize() {
 
 function handleMouseMove(e) {
   if (!currentResizer) return;
-
   const { type, startX, startLeftWidth, startRightWidth, startWidth } = currentResizer;
-
   if (type === 'pane') {
     const leftPane = document.getElementById('terminal-pane');
     const rightPane = document.getElementById('browser-pane');
@@ -499,7 +691,6 @@ function toggleActiveWebviewDevTools() {
   const paneData = getCurrentPaneData();
   const profileId = getCurrentProfileId();
   if (!paneData?.activeTabId) return;
-
   const webview = document.getElementById(`webview-right-${profileId}-${paneData.activeTabId}`);
   if (webview) {
     if (webview.isDevToolsOpened()) webview.closeDevTools();
@@ -522,7 +713,6 @@ function setupWebviewContextMenu(webview) {
     e.preventDefault();
     const params = e.params;
     let menuItems = [];
-
     if (params.linkURL) {
       menuItems.push({ label: 'Open Link in New Tab', action: () => createTab(params.linkURL) });
       menuItems.push({ label: 'Copy Link', action: () => navigator.clipboard.writeText(params.linkURL) });
@@ -534,13 +724,11 @@ function setupWebviewContextMenu(webview) {
       menuItems.push({ label: 'Paste', action: () => webview.paste() });
     }
     if (menuItems.length > 0) menuItems.push({ type: 'separator' });
-
     menuItems.push({ label: 'Back', action: () => webview.goBack(), disabled: !webview.canGoBack() });
     menuItems.push({ label: 'Forward', action: () => webview.goForward(), disabled: !webview.canGoForward() });
     menuItems.push({ label: 'Reload', action: () => webview.reload() });
     menuItems.push({ type: 'separator' });
     menuItems.push({ label: 'Inspect Element', action: () => webview.inspectElement(params.x, params.y) });
-
     showContextMenu(params.x, params.y, menuItems);
   });
 }
@@ -550,7 +738,6 @@ function showContextMenu(x, y, items) {
   const menu = document.createElement('div');
   menu.id = 'context-menu';
   menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;background:var(--light-bg);border:1px solid var(--light-border);border-radius:8px;padding:4px 0;min-width:180px;z-index:10000;box-shadow:0 8px 24px rgba(0,0,0,0.15);`;
-
   items.forEach(item => {
     if (item.type === 'separator') {
       const sep = document.createElement('div');
@@ -569,13 +756,10 @@ function showContextMenu(x, y, items) {
       menu.appendChild(btn);
     }
   });
-
   document.body.appendChild(menu);
-
   const rect = menu.getBoundingClientRect();
   if (rect.right > window.innerWidth) menu.style.left = (window.innerWidth - rect.width - 10) + 'px';
   if (rect.bottom > window.innerHeight) menu.style.top = (window.innerHeight - rect.height - 10) + 'px';
-
   const closeMenu = (e) => {
     if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', closeMenu); }
   };
@@ -604,12 +788,10 @@ function simplifyTitle(title, url) {
 
 function renderWorkspaces() {
   workspaceList.innerHTML = '';
-
   workspaces.forEach(workspace => {
     const item = document.createElement('div');
     item.className = `workspace-item ${activeWorkspace?.id === workspace.id ? 'active' : ''}`;
     item.dataset.id = workspace.id;
-
     item.innerHTML = `
       <span class="workspace-name">${escapeHtml(workspace.name)}</span>
       <div class="workspace-actions">
@@ -617,31 +799,25 @@ function renderWorkspaces() {
         <button class="workspace-action-btn delete" title="Delete">×</button>
       </div>
     `;
-
     item.addEventListener('click', (e) => {
       if (!e.target.classList.contains('workspace-action-btn')) switchWorkspace(workspace.id);
     });
     item.querySelector('.edit').addEventListener('click', (e) => { e.stopPropagation(); openRenameModal(workspace); });
     item.querySelector('.delete').addEventListener('click', (e) => { e.stopPropagation(); deleteWorkspace(workspace.id); });
-
     workspaceList.appendChild(item);
   });
 }
 
 async function createWorkspace(name) {
   const workspace = {
-    id: uuidv4(),
-    name,
+    id: uuidv4(), name,
     panes: { right: { activeProfileId: 'default', profiles: { 'default': { tabs: [], activeTabId: null } } } },
-    notes: '',
-    folderPath: '',
+    notes: '', folderPath: '',
     createdAt: new Date().toISOString()
   };
-
   await window.perimeter.workspace.create(workspace);
   workspaces.push(workspace);
   activeWorkspace = workspace;
-
   updateProfileSelectors();
   renderWorkspaces();
   renderBrowserPane();
@@ -653,12 +829,9 @@ async function createWorkspace(name) {
 async function switchWorkspace(workspaceId) {
   document.querySelectorAll('.pane-webview-container webview').forEach(wv => wv.remove());
   createdWebviews.clear();
-
   activeWorkspace = workspaces.find(w => w.id === workspaceId);
   await window.perimeter.workspace.setActive(workspaceId);
-
   if (activeWorkspace) migrateWorkspaceStructure(activeWorkspace);
-
   updateProfileSelectors();
   renderWorkspaces();
   renderBrowserPane();
@@ -668,15 +841,12 @@ async function switchWorkspace(workspaceId) {
 
 async function deleteWorkspace(workspaceId) {
   if (!confirm('Delete this workspace and all its tabs?')) return;
-
   workspaces = await window.perimeter.workspace.delete(workspaceId);
-
   if (activeWorkspace?.id === workspaceId) {
     document.querySelectorAll('.pane-webview-container webview').forEach(wv => wv.remove());
     createdWebviews.clear();
     activeWorkspace = workspaces[0] || null;
   }
-
   renderWorkspaces();
   renderBrowserPane();
   updateNotepad();
@@ -695,58 +865,46 @@ async function renameWorkspace(workspaceId, newName) {
 }
 
 // ============================================
-// BROWSER PANE TABS
+// BROWSER PANE
 // ============================================
 
 function renderBrowserPane() {
   const tabList = document.querySelector('.pane-tab-list[data-pane="right"]');
   const webviewContainer = document.querySelector('.pane-webview-container[data-pane="right"]');
   const navBar = document.querySelector('.pane-nav-bar[data-pane="right"]');
-
   tabList.innerHTML = '';
-
   if (!activeWorkspace) {
     webviewContainer.querySelectorAll('webview').forEach(wv => wv.remove());
     webviewContainer.querySelector('.pane-empty-state').style.display = 'block';
     navBar.classList.add('hidden');
     return;
   }
-
   migrateWorkspaceStructure(activeWorkspace);
-
   const pane = activeWorkspace.panes.right;
   const activeProfileId = pane.activeProfileId || 'default';
   const activeProfileData = ensurePaneProfile(pane, activeProfileId);
-
   const emptyState = webviewContainer.querySelector('.pane-empty-state');
   const hasTabs = activeProfileData.tabs.length > 0;
   emptyState.style.display = hasTabs ? 'none' : 'block';
   navBar.classList.toggle('hidden', !hasTabs);
-
   webviewContainer.querySelectorAll('webview').forEach(wv => wv.classList.remove('active'));
-
   Object.entries(pane.profiles || {}).forEach(([profileId, profileData]) => {
     const partition = getPartitionForProfile(profileId);
     const isActiveProfile = profileId === activeProfileId;
-
     profileData.tabs.forEach(tab => {
       const webviewKey = `right-${profileId}-${tab.id}`;
       const webviewId = `webview-right-${profileId}-${tab.id}`;
-
       if (isActiveProfile) {
         const item = document.createElement('div');
         item.className = `pane-tab-item ${profileData.activeTabId === tab.id ? 'active' : ''}`;
         item.dataset.id = tab.id;
-
         const favicon = getFaviconUrl(tab.url);
         const displayTitle = simplifyTitle(tab.title, tab.url);
-
         item.innerHTML = `
           <img class="pane-tab-favicon" src="${favicon}" onerror="this.style.display='none'">
           <span class="pane-tab-title" title="${escapeHtml(tab.title || '')}">${escapeHtml(displayTitle)}</span>
           <button class="pane-tab-close" title="Close tab">×</button>
         `;
-
         item.addEventListener('click', (e) => {
           if (!e.target.classList.contains('pane-tab-close')) switchTab(tab.id);
         });
@@ -754,57 +912,42 @@ function renderBrowserPane() {
           e.stopPropagation();
           closeTab(tab.id);
         });
-
         tabList.appendChild(item);
       }
-
       if (!createdWebviews.has(webviewKey)) {
         const webview = document.createElement('webview');
         webview.id = webviewId;
         webview.src = tab.url;
         webview.setAttribute('partition', partition);
         webview.setAttribute('allowpopups', 'true');
-
         webview.addEventListener('dom-ready', () => {
           setupWebviewContextMenu(webview);
           setupWebviewDevToolsHandler(webview);
         });
         webview.addEventListener('page-title-updated', (e) => updateTabTitle(tab.id, e.title, profileId));
-        webview.addEventListener('did-navigate', (e) => {
-          updateTabUrl(tab.id, e.url, profileId);
-          if (isActiveProfile) updateNavBar();
-        });
-        webview.addEventListener('did-navigate-in-page', (e) => {
-          updateTabUrl(tab.id, e.url, profileId);
-          if (isActiveProfile) updateNavBar();
-        });
+        webview.addEventListener('did-navigate', (e) => { updateTabUrl(tab.id, e.url, profileId); if (isActiveProfile) updateNavBar(); });
+        webview.addEventListener('did-navigate-in-page', (e) => { updateTabUrl(tab.id, e.url, profileId); if (isActiveProfile) updateNavBar(); });
         webview.addEventListener('new-window', (e) => { e.preventDefault(); createTab(e.url); });
-
         webviewContainer.appendChild(webview);
         createdWebviews.add(webviewKey);
       }
-
       if (isActiveProfile && profileData.activeTabId === tab.id) {
         document.getElementById(webviewId)?.classList.add('active');
       }
     });
   });
-
   updateNavBar();
 }
 
 function updateNavBar() {
   if (!activeWorkspace) return;
-
   const paneData = getCurrentPaneData();
   const profileId = getCurrentProfileId();
   if (!paneData?.activeTabId) return;
-
   const webview = document.getElementById(`webview-right-${profileId}-${paneData.activeTabId}`);
   const navUrl = document.querySelector('.nav-url[data-pane="right"]');
   const navBack = document.querySelector('.nav-back[data-pane="right"]');
   const navForward = document.querySelector('.nav-forward[data-pane="right"]');
-
   if (webview && navUrl) {
     const tab = paneData.tabs.find(t => t.id === paneData.activeTabId);
     navUrl.value = tab?.url || '';
@@ -812,46 +955,37 @@ function updateNavBar() {
       navBack.disabled = !webview.canGoBack();
       navForward.disabled = !webview.canGoForward();
     } catch (e) {
-      navBack.disabled = true;
-      navForward.disabled = true;
+      navBack.disabled = true; navForward.disabled = true;
     }
   }
 }
 
 async function createTab(url) {
   if (!activeWorkspace) { alert('Create a workspace first'); return; }
-
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
     url = url.includes('.') && !url.includes(' ') ? 'https://' + url : `https://www.google.com/search?q=${encodeURIComponent(url)}`;
   }
-
   const tab = { id: uuidv4(), url, title: 'Loading...', createdAt: new Date().toISOString() };
   const paneData = getCurrentPaneData();
   if (!paneData) return;
-
   paneData.tabs.push(tab);
   paneData.activeTabId = tab.id;
-
   await window.perimeter.workspace.update(activeWorkspace);
   renderBrowserPane();
 }
 
 async function switchTab(tabId) {
   if (!activeWorkspace) return;
-
   const paneData = getCurrentPaneData();
   const profileId = getCurrentProfileId();
   paneData.activeTabId = tabId;
   await window.perimeter.workspace.update(activeWorkspace);
-
   document.querySelectorAll(`.pane-tab-list[data-pane="right"] .pane-tab-item`).forEach(item => {
     item.classList.toggle('active', item.dataset.id === tabId);
   });
-
   document.querySelectorAll('.pane-webview-container webview').forEach(wv => {
     wv.classList.toggle('active', wv.id === `webview-right-${profileId}-${tabId}`);
   });
-
   updateNavBar();
 }
 
@@ -882,42 +1016,33 @@ function navigateToUrl(url) {
   const paneData = getCurrentPaneData();
   const profileId = getCurrentProfileId();
   if (!paneData?.activeTabId) return;
-
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
     url = url.includes('.') && !url.includes(' ') ? 'https://' + url : `https://www.google.com/search?q=${encodeURIComponent(url)}`;
   }
-
   const webview = document.getElementById(`webview-right-${profileId}-${paneData.activeTabId}`);
   if (webview) webview.src = url;
 }
 
 async function closeTab(tabId) {
   if (!activeWorkspace) return;
-
   const paneData = getCurrentPaneData();
   const profileId = getCurrentProfileId();
-
   document.getElementById(`webview-right-${profileId}-${tabId}`)?.remove();
   createdWebviews.delete(`right-${profileId}-${tabId}`);
-
   paneData.tabs = paneData.tabs.filter(t => t.id !== tabId);
   if (paneData.activeTabId === tabId) paneData.activeTabId = paneData.tabs[0]?.id || null;
-
   await window.perimeter.workspace.update(activeWorkspace);
   renderBrowserPane();
 }
 
 async function updateTabTitle(tabId, title, profileId) {
   if (!activeWorkspace) return;
-
   const pane = activeWorkspace.panes.right;
   const profileData = pane.profiles?.[profileId];
   const tab = profileData?.tabs.find(t => t.id === tabId);
-
   if (tab) {
     tab.title = title;
     await window.perimeter.workspace.update(activeWorkspace);
-
     if (profileId === pane.activeProfileId) {
       const tabEl = document.querySelector(`.pane-tab-list[data-pane="right"] .pane-tab-item[data-id="${tabId}"] .pane-tab-title`);
       if (tabEl) {
@@ -930,19 +1055,15 @@ async function updateTabTitle(tabId, title, profileId) {
 
 async function updateTabUrl(tabId, url, profileId) {
   if (!activeWorkspace) return;
-
   const pane = activeWorkspace.panes.right;
   const profileData = pane.profiles?.[profileId];
   const tab = profileData?.tabs.find(t => t.id === tabId);
-
   if (tab) {
     tab.url = url;
     await window.perimeter.workspace.update(activeWorkspace);
-
     if (profileId === pane.activeProfileId && profileData.activeTabId === tabId) {
       const navUrl = document.querySelector('.nav-url[data-pane="right"]');
       if (navUrl) navUrl.value = url;
-
       const favEl = document.querySelector(`.pane-tab-list[data-pane="right"] .pane-tab-item[data-id="${tabId}"] .pane-tab-favicon`);
       if (favEl) { favEl.src = getFaviconUrl(url); favEl.style.display = ''; }
     }
@@ -951,11 +1072,9 @@ async function updateTabUrl(tabId, url, profileId) {
 
 async function changeProfile(profileId) {
   if (!activeWorkspace) return;
-
   const pane = activeWorkspace.panes.right;
   pane.activeProfileId = profileId;
   ensurePaneProfile(pane, profileId);
-
   await window.perimeter.workspace.update(activeWorkspace);
   renderBrowserPane();
   updateProfileSelectors();
@@ -998,7 +1117,7 @@ function expandNotepad() {
 }
 
 // ============================================
-// UI HELPERS
+// HELPERS
 // ============================================
 
 function updateEmptyState() {
@@ -1042,10 +1161,7 @@ function openRenameModal(workspace) {
   workspaceNameInput.select();
 }
 
-function closeWorkspaceModal() {
-  modalOverlay.classList.add('hidden');
-  editingWorkspaceId = null;
-}
+function closeWorkspaceModal() { modalOverlay.classList.add('hidden'); editingWorkspaceId = null; }
 
 function confirmWorkspaceModal() {
   const name = workspaceNameInput.value.trim();
@@ -1081,13 +1197,10 @@ function setupEventListeners() {
   window.addEventListener('blur', stopResize);
 
   document.getElementById('devtools-btn').addEventListener('click', toggleActiveWebviewDevTools);
-
   document.getElementById('add-workspace').addEventListener('click', openCreateWorkspaceModal);
   document.getElementById('empty-create-workspace').addEventListener('click', openCreateWorkspaceModal);
-
   document.getElementById('folder-browse-btn').addEventListener('click', browseFolder);
   document.getElementById('folder-path-input').addEventListener('click', browseFolder);
-
   document.getElementById('git-push-btn').addEventListener('click', gitPush);
   document.getElementById('git-pull-btn').addEventListener('click', gitPull);
   document.getElementById('git-refresh-btn').addEventListener('click', checkGitStatus);
@@ -1098,6 +1211,10 @@ function setupEventListeners() {
   cloneConfirmBtn.addEventListener('click', confirmClone);
   cloneUrlInput.addEventListener('input', updateClonePreview);
   cloneUrlInput.addEventListener('keypress', (e) => { if (e.key === 'Enter' && !cloneConfirmBtn.disabled) confirmClone(); });
+  cloneRepoSearch.addEventListener('input', renderRepoList);
+  document.querySelectorAll('.clone-tab').forEach(b => {
+    b.addEventListener('click', () => setCloneTab(b.dataset.cloneTab));
+  });
   cloneModalOverlay.addEventListener('click', (e) => { if (e.target === cloneModalOverlay && !cloneCancelBtn.disabled) closeCloneModal(); });
 
   document.querySelector('.pane-add-tab[data-pane="right"]').addEventListener('click', openTabModal);
@@ -1105,9 +1222,7 @@ function setupEventListeners() {
   document.querySelectorAll('.profile-select').forEach(select => {
     select.addEventListener('change', (e) => changeProfile(e.target.value));
   });
-  document.querySelectorAll('.profile-manage-btn').forEach(btn => {
-    btn.addEventListener('click', openProfileModal);
-  });
+  document.querySelectorAll('.profile-manage-btn').forEach(btn => btn.addEventListener('click', openProfileModal));
   document.getElementById('profile-modal-close').addEventListener('click', closeProfileModal);
   document.getElementById('add-profile-btn').addEventListener('click', addProfile);
   document.getElementById('new-profile-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addProfile(); });
