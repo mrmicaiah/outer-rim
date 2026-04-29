@@ -23,19 +23,18 @@
   //   "⎿ ..."            indented tool result / continuation
   //   "● ..."            assistant prose marker (newer versions)
   //
-  // Strategy: wrap those lines with dim ANSI + a subtle color. When the
-  // markers aren't detected, raw data passes through unchanged so any
-  // non-Claude command behaves exactly as in a normal terminal.
-  //
-  // ANSI codes used:
-  //   \x1b[2m  = dim/faint
-  //   \x1b[0m  = reset
-  //   \x1b[38;5;244m = mid-gray (256-color)
-  //   \x1b[38;5;110m = soft blue
-  //
-  // Note: Claude Code already uses ANSI extensively, so we only wrap lines
-  // that START at a line boundary with a known marker. Partial chunks get
-  // buffered until we see a newline.
+  // CRITICAL: The styler must NOT delay character-by-character keystroke
+  // echo. Most terminal output during normal typing is per-keystroke echo
+  // with no newlines — if we buffer those waiting for a newline, the user
+  // sees no feedback while typing. We only enter buffering mode when the
+  // chunk could plausibly contain a Claude-styled line (i.e. it has both
+  // a marker character AND a newline somewhere). Otherwise the chunk
+  // passes through unchanged so xterm renders immediately.
+
+  // The marker characters we look for, as a quick test before doing any
+  // line-splitting work.
+  const MARKER_CHARS = '⏺⎿●';
+  const MARKER_RE = new RegExp(`[${MARKER_CHARS}]`);
 
   function createClaudeStyler() {
     let buffer = '';
@@ -44,12 +43,26 @@
       process(data) {
         if (!styleClaudeOutput) return data;
 
+        // Fast path: nothing buffered AND no markers AND no newlines in
+        // this chunk → it's just keystroke echo or mid-line output. Pass
+        // through immediately so the user sees their typing.
+        if (!buffer && !MARKER_RE.test(data) && !/\r?\n/.test(data)) {
+          return data;
+        }
+
         buffer += data;
 
-        // Split into full lines; keep the trailing partial line in buffer
+        // If the buffer has no marker character anywhere AND no newline,
+        // there is nothing to style and we should not hold the data back.
+        // Flush whatever we have.
+        if (!MARKER_RE.test(buffer) && !/\r?\n/.test(buffer)) {
+          const out = buffer;
+          buffer = '';
+          return out;
+        }
+
+        // Otherwise, do the line-by-line styling pass.
         const lines = buffer.split(/(\r?\n)/);
-        // If buffer ends with a newline, all lines are complete. Otherwise
-        // the last element is an incomplete line we hold onto.
         let completeCount = lines.length;
         if (!/\r?\n$/.test(buffer)) completeCount -= 1;
 
@@ -58,8 +71,16 @@
           out += styleLine(lines[i]);
         }
 
-        // Retain whatever is left (partial line or nothing)
-        buffer = lines.slice(completeCount).join('');
+        // What's left is a partial line we hold onto only if it could
+        // plausibly become a styled line (starts with or contains a marker).
+        // Otherwise flush it so the user can see partial output.
+        const remainder = lines.slice(completeCount).join('');
+        if (remainder && !MARKER_RE.test(remainder)) {
+          out += remainder;
+          buffer = '';
+        } else {
+          buffer = remainder;
+        }
         return out;
       },
       flush() {
