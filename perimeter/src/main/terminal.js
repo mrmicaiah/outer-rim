@@ -28,6 +28,17 @@ function getDefaultShell() {
   return process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash');
 }
 
+// Shell args matter: launching as interactive (-i) login (-l) puts zsh in
+// the right mode for line-editing and character echo. Without these, you
+// get a pty that only shows your keystrokes after Enter — because zsh
+// hasn't initialized its zle (line editor) and falls back to canonical
+// kernel-buffered input.
+function getShellArgs(shell) {
+  if (process.platform === 'win32') return [];
+  // bash, zsh, fish, sh — all accept -l (login) and -i (interactive)
+  return ['-l', '-i'];
+}
+
 // Make sure PATH picks up common binary locations. Electron apps launched
 // from Finder have a stripped-down PATH, which means `claude`, `git`, `brew`,
 // and homebrew-installed tools are invisible unless we splice them in.
@@ -78,10 +89,11 @@ function registerTerminalHandlers() {
     }
 
     const shell = getDefaultShell();
+    const shellArgs = getShellArgs(shell);
     let ptyProc;
 
     try {
-      ptyProc = pty.spawn(shell, [], {
+      ptyProc = pty.spawn(shell, shellArgs, {
         name: 'xterm-256color',
         cols: cols || 80,
         rows: rows || 24,
