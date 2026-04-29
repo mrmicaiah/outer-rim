@@ -39,6 +39,21 @@ class Store {
       console.error('Error writing store:', error);
     }
   }
+
+  // Return the entire store — used by sync-client to snapshot state for cloud upload.
+  getAll() {
+    return this.data;
+  }
+
+  // Replace the entire store contents — used by sync-client when applying a remote snapshot.
+  replaceAll(newData) {
+    this.data = newData || {};
+    try {
+      fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2));
+    } catch (error) {
+      console.error('Error writing store:', error);
+    }
+  }
 }
 
 module.exports = Store;
