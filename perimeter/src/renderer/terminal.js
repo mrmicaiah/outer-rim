@@ -7,14 +7,13 @@
 // Data flows: keystroke → preload.terminal.write → main PTY.write → shell
 //             shell stdout → main PTY.onData → preload.terminal.onData → xterm.write
 //
-// The optional "Claude styling" middleware intercepts PTY data before it
-// reaches xterm and annotates Claude Code's tool-call blocks with ANSI dim
-// sequences so conversation stands out from tool execution.
-//
-// We also detect WHEN Claude Code is running in a terminal (so the chat
-// input + Launch button + tab icon can adapt) by watching for the same
-// marker characters the styler uses. Once we've seen one, the terminal is
-// flagged claudeActive=true until it closes.
+// We track WHEN Claude Code is running in a terminal in two ways:
+//  1. App.js calls markActiveAsClaudeCode() right after sending the launch
+//     command — the Launch button knows it just started claude, no need to
+//     wait for output detection.
+//  2. The styler also detects marker chars (⏺⎿●) as a fallback for
+//     terminals where the user typed `claude` themselves without using the
+//     Launch button.
 
 (function () {
   // State
@@ -22,9 +21,6 @@
   let activeTermId = null;
   let styleClaudeOutput = true;
 
-  // Listeners that get notified when the active terminal changes or its
-  // claude-active flag flips. Lets app.js update the chat-input enable state
-  // and the Launch button state without polling.
   const stateListeners = new Set();
   function notifyStateChange() {
     const snapshot = getActiveState();
@@ -45,6 +41,18 @@
     };
   }
 
+  // Flip the active terminal's claudeActive flag and update its tab icon.
+  // Called by app.js right after the Launch button sends `claude\n`.
+  function markActiveAsClaudeCode() {
+    if (!activeTermId) return;
+    const entry = terminals.get(activeTermId);
+    if (!entry || entry.claudeActive) return;
+    entry.claudeActive = true;
+    const iconEl = entry.tabEl.querySelector('.terminal-tab-icon');
+    if (iconEl) iconEl.textContent = '🤖';
+    notifyStateChange();
+  }
+
   // ---- Claude Code output styling ---------------------------------
 
   const MARKER_CHARS = '⏺⎿●';
@@ -56,7 +64,6 @@
 
     return {
       process(data) {
-        // Detection — fire on the first marker we ever see in this terminal.
         if (!markerEverSeen && MARKER_RE.test(data)) {
           markerEverSeen = true;
           if (typeof onMarkerSeen === 'function') {
@@ -162,7 +169,6 @@
       try { fitAddon.fit(); } catch (e) {}
     });
 
-    // Tab pill
     const tabEl = document.createElement('div');
     tabEl.className = 'pane-tab-item';
     tabEl.dataset.termId = termId;
@@ -182,7 +188,6 @@
       closeTerminal(termId);
     });
 
-    // The styler also flips claudeActive=true the first time it sees a marker.
     const styler = createClaudeStyler(() => {
       const e = terminals.get(termId);
       if (e && !e.claudeActive) {
@@ -277,22 +282,17 @@
 
   // ---- Public helpers used by app.js -----------------------------
 
-  // Send arbitrary text to the active terminal (so the chat input can deliver
-  // a typed message + Enter, and the Launch button can deliver `claude\n`).
   function sendToActive(text) {
     if (!activeTermId) return false;
     window.perimeter.terminal.write(activeTermId, text);
     return true;
   }
 
-  // Send Esc (interrupt Claude Code's current task) to the active terminal.
   function interruptActive() {
     if (!activeTermId) return false;
     window.perimeter.terminal.write(activeTermId, '\x1b');
     return true;
   }
-
-  // ---- Global setup -----------------------------------------------
 
   function init() {
     document.getElementById('terminal-add-tab').addEventListener('click', () => {
@@ -329,7 +329,6 @@
       ro.observe(termPane);
     }
 
-    // Initial state notification so app.js can render the chat input correctly.
     notifyStateChange();
   }
 
@@ -347,6 +346,7 @@
     setStylingEnabled,
     sendToActive,
     interruptActive,
+    markActiveAsClaudeCode,
     getActiveState,
     onStateChange: (fn) => {
       stateListeners.add(fn);
