@@ -26,13 +26,13 @@ contextBridge.exposeInMainWorld('perimeter', {
     status: (projectPath) => ipcRenderer.invoke('git:status', projectPath),
     push: (projectPath, message) => ipcRenderer.invoke('git:push', projectPath, message),
     pull: (projectPath) => ipcRenderer.invoke('git:pull', projectPath),
+    clone: (args) => ipcRenderer.invoke('git:clone', args),
   },
   terminal: {
     create: (opts) => ipcRenderer.invoke('terminal:create', opts),
     write: (termId, data) => ipcRenderer.send('terminal:write', { termId, data }),
     resize: (termId, cols, rows) => ipcRenderer.send('terminal:resize', { termId, cols, rows }),
     destroy: (termId) => ipcRenderer.invoke('terminal:destroy', { termId }),
-    // Callbacks get (event, payload) — payload = { termId, data }
     onData: (callback) => ipcRenderer.on('terminal:data', callback),
     onExit: (callback) => ipcRenderer.on('terminal:exit', callback),
   },

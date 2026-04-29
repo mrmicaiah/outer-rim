@@ -56,6 +56,28 @@ function runGit(args, options = {}) {
   });
 }
 
+// Extract "repo-name" from a git URL.
+// Handles:
+//   https://github.com/owner/repo.git -> repo
+//   https://github.com/owner/repo     -> repo
+//   git@github.com:owner/repo.git     -> repo
+//   https://gitlab.com/group/sub/repo.git -> repo
+function repoNameFromUrl(url) {
+  if (!url) return null;
+  let trimmed = url.trim();
+  // Strip trailing slash and .git
+  trimmed = trimmed.replace(/\.git$/i, '').replace(/\/$/, '');
+  // Last path segment is the repo name
+  const lastSlash = trimmed.lastIndexOf('/');
+  const lastColon = trimmed.lastIndexOf(':');
+  const cut = Math.max(lastSlash, lastColon);
+  if (cut === -1) return null;
+  const name = trimmed.substring(cut + 1);
+  // Sanity: must look like a valid folder name
+  if (!name || /[^A-Za-z0-9._-]/.test(name)) return null;
+  return name;
+}
+
 // ============================================
 // WINDOW
 // ============================================
@@ -359,4 +381,72 @@ ipcMain.handle('git:pull', async (event, projectPath) => {
     return { success: true, message: result.stdout || 'Pulled successfully' };
   }
   return { success: false, error: result.stderr || result.error || 'Pull failed' };
+});
+
+// ---- git:clone ----------------------------------------------------
+//
+// Clone a repository into a parent folder. The parent is the workspace's
+// Project Folder if set, otherwise we auto-create ~/Projects.
+//
+// Args: { url, parentPath }
+//   url        — git URL to clone (https or ssh)
+//   parentPath — directory to clone INTO (the repo will become a subfolder)
+//                If null/empty, defaults to ~/Projects (created if missing).
+//
+// Returns: { success, clonedPath, repoName, parentPath, message } on success
+//          { success: false, error } on failure
+//
+ipcMain.handle('git:clone', async (event, args = {}) => {
+  const { url, parentPath } = args;
+  if (!url || typeof url !== 'string' || !url.trim()) {
+    return { success: false, error: 'Repository URL is required' };
+  }
+
+  const repoName = repoNameFromUrl(url);
+  if (!repoName) {
+    return { success: false, error: 'Could not parse a repository name from that URL' };
+  }
+
+  // Resolve the parent directory. If none provided, use ~/Projects.
+  let parent = resolvePath(parentPath || '');
+  if (!parent) {
+    parent = path.join(os.homedir(), 'Projects');
+  }
+
+  // Create parent if it doesn't exist (recursive so ~/Projects "just works")
+  try {
+    fs.mkdirSync(parent, { recursive: true });
+  } catch (err) {
+    return { success: false, error: `Could not create parent folder: ${err.message}` };
+  }
+
+  const destPath = path.join(parent, repoName);
+  if (fs.existsSync(destPath)) {
+    return {
+      success: false,
+      error: `A folder named "${repoName}" already exists in ${parent}. Choose a different name or delete it first.`,
+      destPath,
+    };
+  }
+
+  // Clone. Using `git clone <url> <repoName>` with cwd=parent so dest is
+  // <parent>/<repoName>. timeout=5min for big repos.
+  const result = await runGit(['clone', url.trim(), repoName], {
+    cwd: parent,
+    timeout: 5 * 60 * 1000,
+  });
+
+  if (!result.success) {
+    // Surface git's actual error so the user can act on it (auth, 404, etc).
+    const errMsg = (result.stderr || result.error || 'git clone failed').trim();
+    return { success: false, error: errMsg };
+  }
+
+  return {
+    success: true,
+    clonedPath: destPath,
+    repoName,
+    parentPath: parent,
+    message: `Cloned ${repoName} into ${parent}`,
+  };
 });
