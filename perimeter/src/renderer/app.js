@@ -27,7 +27,6 @@ const tabModalOverlay = document.getElementById('tab-modal-overlay');
 const tabUrlInput = document.getElementById('tab-url-input');
 const profileModalOverlay = document.getElementById('profile-modal-overlay');
 
-// Clone dialog DOM
 const cloneModalOverlay = document.getElementById('clone-modal-overlay');
 const cloneUrlInput = document.getElementById('clone-url-input');
 const clonePreviewPath = document.getElementById('clone-preview-path');
@@ -45,7 +44,6 @@ let cachedRepos = null;
 let selectedRepoUrl = null;
 let selectedRepoName = null;
 
-// Claude Code DOM
 const claudeLaunchBtn = document.getElementById('claude-launch-btn');
 const claudeLaunchSkipBtn = document.getElementById('claude-launch-skip-btn');
 const claudeStatusBadge = document.getElementById('claude-status-badge');
@@ -82,13 +80,9 @@ async function init() {
 
   if (window.PerimeterTerminals) {
     window.PerimeterTerminals.init();
-    // Subscribe to terminal-state changes so we can enable/disable the Claude
-    // Code Launch buttons + chat input as terminals open/close + Claude
-    // Code activates.
     window.PerimeterTerminals.onStateChange((state) => updateClaudeUI(state));
   }
 
-  // Initial render based on whatever the terminal state is right now (probably no terminal yet).
   updateClaudeUI(window.PerimeterTerminals?.getActiveState() || { hasTerminal: false, claudeActive: false });
 
   window.perimeter.onMenuToggleDevTools(() => toggleActiveWebviewDevTools());
@@ -100,10 +94,6 @@ async function init() {
 // CLAUDE CODE (Launch buttons + chat input + interrupt)
 // ============================================
 
-// Update everything Claude-Code-related based on:
-//   - whether there's an active terminal
-//   - whether Claude Code is detected as running in it
-//   - whether the workspace has a Project Folder set
 function updateClaudeUI(state) {
   const hasTerminal = !!state?.hasTerminal;
   const claudeActive = !!state?.claudeActive;
@@ -113,9 +103,6 @@ function updateClaudeUI(state) {
   if (claudeActive) {
     claudeStatusBadge.className = 'status-badge running';
     claudeStatusBadge.textContent = 'Running';
-  } else if (hasTerminal) {
-    claudeStatusBadge.className = 'status-badge signed-out';
-    claudeStatusBadge.textContent = 'Idle';
   } else {
     claudeStatusBadge.className = 'status-badge signed-out';
     claudeStatusBadge.textContent = 'Idle';
@@ -127,61 +114,58 @@ function updateClaudeUI(state) {
   } else if (!hasTerminal) {
     claudeSectionHint.textContent = 'Open a terminal (click + above the terminal pane) to launch Claude Code.';
   } else if (claudeActive) {
-    claudeSectionHint.textContent = 'Claude Code is running. Use the chat box at the bottom of the terminal pane.';
+    claudeSectionHint.textContent = 'Claude Code is running. Use the chat box at the bottom to talk to it.';
   } else {
     claudeSectionHint.textContent = 'Press ▶ Launch to start Claude Code in the active terminal.';
   }
 
-  // Buttons:
+  // Launch buttons:
   //   disabled if no folder OR no terminal OR claude already running
   const canLaunch = hasFolder && hasTerminal && !claudeActive;
   claudeLaunchBtn.disabled = !canLaunch;
   claudeLaunchSkipBtn.disabled = !canLaunch;
 
-  // If there's no folder, clicking a disabled launch button should open the
-  // clone dialog (UX shortcut). We attach a special class so the click
-  // handler knows what to do.
   claudeLaunchBtn.dataset.disabledReason = !hasFolder ? 'no-folder'
     : !hasTerminal ? 'no-terminal'
     : claudeActive ? 'already-running'
     : '';
   claudeLaunchSkipBtn.dataset.disabledReason = claudeLaunchBtn.dataset.disabledReason;
 
-  // Chat input + buttons
-  if (!hasFolder) {
+  // Chat input + buttons:
+  // Enabled whenever there's a terminal. Whatever you type goes to the
+  // active terminal — if Claude Code is running it gets your message,
+  // if not it goes to the shell. Either way the user is not blocked.
+  if (!hasTerminal) {
     claudeChatInput.disabled = true;
-    claudeChatInput.placeholder = 'Set a Project Folder, open a terminal, and click ▶ Launch to chat…';
-  } else if (!hasTerminal) {
-    claudeChatInput.disabled = true;
-    claudeChatInput.placeholder = 'Open a terminal to chat with Claude Code…';
-  } else if (!claudeActive) {
-    claudeChatInput.disabled = true;
-    claudeChatInput.placeholder = 'Click ▶ Launch to start Claude Code, then chat here…';
-  } else {
+    claudeChatInput.placeholder = hasFolder
+      ? 'Open a terminal to chat with Claude Code…'
+      : 'Set a Project Folder, open a terminal, then chat here…';
+  } else if (claudeActive) {
     claudeChatInput.disabled = false;
     claudeChatInput.placeholder = 'Type to Claude Code…  (Enter sends, Shift+Enter newline)';
+  } else {
+    // Terminal is open but Claude isn't detected yet — still let user type.
+    // If they type before launching, it goes to the shell as a normal command.
+    claudeChatInput.disabled = false;
+    claudeChatInput.placeholder = hasFolder
+      ? 'Press ▶ Launch first, or type a shell command…'
+      : 'Type to send to the active terminal…';
   }
   claudeChatSend.disabled = claudeChatInput.disabled;
-  claudeChatStop.disabled = !hasTerminal; // stop is useful even before claude is detected,
-                                          // so user can Esc out of any prompt that's stuck
+  claudeChatStop.disabled = !hasTerminal;
 }
 
-// Send the launch command to the active terminal.
 function launchClaudeCode({ skipPermissions = false } = {}) {
   const reason = (skipPermissions ? claudeLaunchSkipBtn : claudeLaunchBtn).dataset.disabledReason;
   if (reason === 'no-folder') {
-    // Convenience: clicking a disabled launch button when no folder is set
-    // shortcuts to the clone dialog.
     openCloneModal();
     return;
   }
-  if (reason) return; // shouldn't happen since button is disabled, but be safe
+  if (reason) return;
 
   if (!activeWorkspace?.folderPath) return;
   const folder = activeWorkspace.folderPath;
 
-  // Build the command. We cd first so claude opens with the right cwd even if
-  // the terminal was started elsewhere. Quote the folder in case of spaces.
   const escaped = folder.replace(/"/g, '\\"');
   const cmd = skipPermissions
     ? `cd "${escaped}" && claude --dangerously-skip-permissions\n`
@@ -189,6 +173,9 @@ function launchClaudeCode({ skipPermissions = false } = {}) {
 
   if (window.PerimeterTerminals) {
     window.PerimeterTerminals.sendToActive(cmd);
+    // Mark this terminal as Claude-Code-active immediately so the UI updates
+    // without waiting for the marker characters to appear in output.
+    window.PerimeterTerminals.markActiveAsClaudeCode();
   }
 }
 
@@ -197,12 +184,10 @@ function sendChatMessage() {
   const text = claudeChatInput.value;
   if (!text.trim()) return;
 
-  // Send the message + Enter so Claude Code receives it as a complete line.
   if (window.PerimeterTerminals) {
     window.PerimeterTerminals.sendToActive(text + '\n');
   }
 
-  // Clear the box and reset its height
   claudeChatInput.value = '';
   claudeChatInput.style.height = '';
 }
@@ -291,7 +276,6 @@ function updateSidebar() {
     window.__perimeterCurrentFolder = undefined;
   }
 
-  // Folder change can flip the Claude Code section state.
   if (window.PerimeterTerminals) {
     updateClaudeUI(window.PerimeterTerminals.getActiveState());
   }
@@ -513,7 +497,7 @@ async function initSync() {
 }
 
 // ============================================
-// CLONE REPO (with My Repos browser)
+// CLONE REPO
 // ============================================
 
 function repoNameFromUrl(url) {
@@ -1340,7 +1324,6 @@ function setupEventListeners() {
   document.getElementById('git-pull-btn').addEventListener('click', gitPull);
   document.getElementById('git-refresh-btn').addEventListener('click', checkGitStatus);
 
-  // Clone Repo
   document.getElementById('clone-repo-btn').addEventListener('click', openCloneModal);
   cloneCancelBtn.addEventListener('click', closeCloneModal);
   cloneConfirmBtn.addEventListener('click', confirmClone);
@@ -1352,15 +1335,9 @@ function setupEventListeners() {
   });
   cloneModalOverlay.addEventListener('click', (e) => { if (e.target === cloneModalOverlay && !cloneCancelBtn.disabled) closeCloneModal(); });
 
-  // Claude Code launch buttons.
-  // Even when disabled, clicking the button can still run — we use
-  // pointer-events on disabled buttons via a data-disabled-reason check.
-  // The trick: disabled <button> doesn't fire click. So we attach click on
-  // the parent so we still get the event when the button is disabled.
+  // Claude Code launch buttons — parent click delegation so disabled buttons can still open the clone modal.
   claudeLaunchBtn.parentElement.addEventListener('click', (e) => {
     if (e.target.closest('#claude-launch-btn')) {
-      // Only trigger when the button is the target. If button is disabled
-      // and reason is 'no-folder', open clone modal.
       const btn = claudeLaunchBtn;
       if (btn.disabled && btn.dataset.disabledReason === 'no-folder') {
         openCloneModal();
@@ -1378,15 +1355,11 @@ function setupEventListeners() {
       }
     }
   });
-  // Disabled buttons don't fire clicks in Chromium — work around so the
-  // "open clone dialog when no folder" shortcut still works.
   [claudeLaunchBtn, claudeLaunchSkipBtn].forEach(btn => {
     btn.style.pointerEvents = 'auto';
   });
 
-  // Claude chat input
   claudeChatInput.addEventListener('input', () => {
-    // Auto-grow up to max-height (CSS handles the cap with overflow)
     claudeChatInput.style.height = 'auto';
     claudeChatInput.style.height = Math.min(claudeChatInput.scrollHeight, 160) + 'px';
   });
