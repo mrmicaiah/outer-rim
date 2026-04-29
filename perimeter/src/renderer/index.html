@@ -20,7 +20,7 @@
       <div id="upper-section">
         <div id="layout-container">
 
-          <!-- LEFT SIDEBAR: Workspace + Folder + Git (like Outer Rim) -->
+          <!-- LEFT SIDEBAR -->
           <div id="sidebar" class="sidebar-pane">
 
             <div class="sidebar-section">
@@ -81,6 +81,38 @@
               </button>
             </div>
 
+            <!-- Cloud Sync Section -->
+            <div id="sync-section" class="sidebar-section">
+              <div class="sidebar-section-header">
+                <span class="sidebar-section-title">Cloud Sync</span>
+                <span id="sync-status-badge" class="status-badge signed-out">Off</span>
+              </div>
+
+              <div id="sync-signed-out">
+                <p class="sync-desc">Sign in with GitHub to sync your workspaces and unlock the repo browser when cloning.</p>
+                <button id="sync-signin-btn" class="git-btn signin-btn">
+                  <span class="btn-icon">🔑</span>
+                  <span>Sign in with GitHub</span>
+                </button>
+              </div>
+
+              <div id="sync-signed-in" class="hidden">
+                <div class="sync-account-row">
+                  <span class="sync-account-name" id="sync-account-name">@user</span>
+                  <button id="sync-signout-btn" class="action-btn">Sign Out</button>
+                </div>
+                <div id="sync-last-synced-text" class="folder-status">Never synced</div>
+                <button id="sync-now-btn" class="refresh-btn">↻ Sync Now</button>
+                <div id="sync-conflict-banner" class="sync-conflict-banner hidden">
+                  <p><strong>Conflict:</strong> cloud has newer data.</p>
+                  <div class="git-actions">
+                    <button id="sync-pull-force-btn" class="git-btn pull-btn">Pull (overwrite local)</button>
+                    <button id="sync-push-force-btn" class="git-btn push-btn">Push (overwrite cloud)</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div class="sidebar-spacer"></div>
           </div>
 
@@ -99,11 +131,9 @@
               <div id="terminal-empty" class="pane-empty-state">
                 <p>Click + to open a terminal</p>
               </div>
-              <!-- Individual terminal containers get injected here -->
             </div>
           </div>
 
-          <!-- Pane Resizer -->
           <div id="pane-resizer"></div>
 
           <!-- RIGHT PANE: Browser -->
@@ -131,10 +161,8 @@
             </div>
           </div>
 
-          <!-- Notepad Resizer -->
           <div id="notepad-resizer"></div>
 
-          <!-- Notepad Panel -->
           <div id="notepad-panel">
             <div class="notepad-header">
               <span class="notepad-title">📝 Notes</span>
@@ -207,14 +235,31 @@
       </div>
     </div>
 
-    <!-- Clone Repo Modal -->
+    <!-- Clone Repo Modal (with two tabs: My Repos / Paste URL) -->
     <div id="clone-modal-overlay" class="hidden">
       <div id="clone-modal">
         <h3>Clone Repository</h3>
-        <p class="profile-modal-desc" id="clone-modal-desc">
-          Paste a Git URL. The repo will be cloned as a folder inside your Project Folder.
-        </p>
-        <input type="text" id="clone-url-input" placeholder="https://github.com/owner/repo.git" autocomplete="off" spellcheck="false">
+
+        <div class="clone-tabs">
+          <button class="clone-tab active" data-clone-tab="my-repos">📂 My Repos</button>
+          <button class="clone-tab" data-clone-tab="paste-url">🔗 Paste URL</button>
+        </div>
+
+        <!-- My Repos pane -->
+        <div id="clone-pane-my-repos" class="clone-pane">
+          <div id="clone-signed-out-hint" class="clone-signed-out-hint hidden">
+            <p>Sign in with GitHub (in the Cloud Sync sidebar) to browse your repos.</p>
+          </div>
+          <input type="text" id="clone-repo-search" placeholder="Search your repos…" autocomplete="off" spellcheck="false">
+          <div id="clone-repo-list" class="clone-repo-list"></div>
+        </div>
+
+        <!-- Paste URL pane -->
+        <div id="clone-pane-paste-url" class="clone-pane hidden">
+          <p class="profile-modal-desc">Paste any Git URL (HTTPS or SSH) for a public repo or one outside your account.</p>
+          <input type="text" id="clone-url-input" placeholder="https://github.com/owner/repo.git" autocomplete="off" spellcheck="false">
+        </div>
+
         <div id="clone-destination-preview" class="clone-preview">
           <span class="clone-preview-label">Will clone into:</span>
           <span class="clone-preview-path" id="clone-preview-path">—</span>
