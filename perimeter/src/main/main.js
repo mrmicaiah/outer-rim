@@ -5,13 +5,17 @@ const os = require('os');
 const { spawn, spawnSync } = require('child_process');
 const Store = require('./store');
 const { registerTerminalHandlers } = require('./terminal');
+const createSync = require('./sync-client');
 
 const store = new Store();
 let mainWindow;
 let terminalCleanup = { cleanupAll() {} };
+let sync = null;
+
+function markDirty() { if (sync) sync.markDirty(); }
 
 // ============================================
-// GIT HELPERS (same pattern as Outer Rim)
+// GIT HELPERS
 // ============================================
 
 function findGitPath() {
@@ -45,7 +49,10 @@ function runGit(args, options = {}) {
     const cwd = options.cwd || os.homedir();
     const timeout = options.timeout || 60000;
 
-    const child = spawn(gitPath, args, { cwd, env: SHELL_ENV, timeout });
+    // Allow caller to override env (used to inject GH_TOKEN for HTTPS auth).
+    const env = options.env || SHELL_ENV;
+
+    const child = spawn(gitPath, args, { cwd, env, timeout });
     let stdout = '', stderr = '';
     child.stdout.on('data', (d) => { stdout += d.toString(); });
     child.stderr.on('data', (d) => { stderr += d.toString(); });
@@ -56,26 +63,25 @@ function runGit(args, options = {}) {
   });
 }
 
-// Extract "repo-name" from a git URL.
-// Handles:
-//   https://github.com/owner/repo.git -> repo
-//   https://github.com/owner/repo     -> repo
-//   git@github.com:owner/repo.git     -> repo
-//   https://gitlab.com/group/sub/repo.git -> repo
 function repoNameFromUrl(url) {
   if (!url) return null;
   let trimmed = url.trim();
-  // Strip trailing slash and .git
   trimmed = trimmed.replace(/\.git$/i, '').replace(/\/$/, '');
-  // Last path segment is the repo name
   const lastSlash = trimmed.lastIndexOf('/');
   const lastColon = trimmed.lastIndexOf(':');
   const cut = Math.max(lastSlash, lastColon);
   if (cut === -1) return null;
   const name = trimmed.substring(cut + 1);
-  // Sanity: must look like a valid folder name
   if (!name || /[^A-Za-z0-9._-]/.test(name)) return null;
   return name;
+}
+
+// Inject the GitHub token into an HTTPS clone URL so private clones work
+// without prompting. Format: https://x-access-token:{token}@github.com/owner/repo.git
+function injectTokenIntoHttpsUrl(url, token) {
+  if (!token) return url;
+  if (!/^https?:\/\//i.test(url)) return url; // SSH or other — leave as-is
+  return url.replace(/^(https?:\/\/)/i, `$1x-access-token:${token}@`);
 }
 
 // ============================================
@@ -116,20 +122,42 @@ function initializeProfiles() {
   }
 }
 
+// ============================================
+// Cloud sync wiring
+// ============================================
+
+function initializeSync() {
+  const syncStatePath = path.join(app.getPath('userData'), 'perimeter-sync.json');
+
+  sync = createSync({
+    appName: 'perimeter',
+    storePath: syncStatePath,
+    workerUrl: process.env.OUTER_RIM_SYNC_URL,
+    getLocalState: () => store.getAll(),
+    applyRemoteState: (data) => {
+      store.replaceAll(data);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:remote-applied');
+      }
+    },
+    onStatusChange: (status) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:status', status);
+      }
+    },
+  });
+
+  sync.init();
+}
+
 function createAppMenu() {
   const template = [
     {
       label: 'Perimeter',
       submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
-        { role: 'quit' }
+        { role: 'about' }, { type: 'separator' }, { role: 'services' },
+        { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
+        { type: 'separator' }, { role: 'quit' }
       ]
     },
     {
@@ -144,35 +172,18 @@ function createAppMenu() {
       label: 'View',
       submenu: [
         { role: 'reload' }, { role: 'forceReload' }, { type: 'separator' },
-        {
-          label: 'Toggle Webview DevTools',
-          accelerator: 'F12',
-          click: () => mainWindow?.webContents.send('menu:toggleDevTools')
-        },
-        {
-          label: 'Toggle App DevTools',
-          accelerator: 'Alt+CmdOrCtrl+I',
-          click: () => mainWindow?.webContents.toggleDevTools()
-        },
+        { label: 'Toggle Webview DevTools', accelerator: 'F12', click: () => mainWindow?.webContents.send('menu:toggleDevTools') },
+        { label: 'Toggle App DevTools', accelerator: 'Alt+CmdOrCtrl+I', click: () => mainWindow?.webContents.toggleDevTools() },
         { type: 'separator' },
         { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' }
+        { type: 'separator' }, { role: 'togglefullscreen' }
       ]
     },
     {
       label: 'Terminal',
       submenu: [
-        {
-          label: 'New Terminal Tab',
-          accelerator: 'CmdOrCtrl+T',
-          click: () => mainWindow?.webContents.send('menu:newTerminal')
-        },
-        {
-          label: 'Close Terminal Tab',
-          accelerator: 'CmdOrCtrl+W',
-          click: () => mainWindow?.webContents.send('menu:closeTerminal')
-        }
+        { label: 'New Terminal Tab', accelerator: 'CmdOrCtrl+T', click: () => mainWindow?.webContents.send('menu:newTerminal') },
+        { label: 'Close Terminal Tab', accelerator: 'CmdOrCtrl+W', click: () => mainWindow?.webContents.send('menu:closeTerminal') }
       ]
     },
     {
@@ -190,6 +201,7 @@ app.whenReady().then(() => {
   createAppMenu();
   createWindow();
   terminalCleanup = registerTerminalHandlers();
+  initializeSync();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -212,7 +224,7 @@ ipcMain.handle('devtools:toggle', () => mainWindow?.webContents.toggleDevTools()
 ipcMain.handle('devtools:openWebview', () => mainWindow?.webContents.send('menu:toggleDevTools'));
 
 // ============================================
-// WORKSPACE
+// WORKSPACE (mutations mark sync dirty)
 // ============================================
 
 ipcMain.handle('workspace:getAll', () => store.get('workspaces') || []);
@@ -228,6 +240,7 @@ ipcMain.handle('workspace:create', (event, workspace) => {
   workspaces.push(workspace);
   store.set('workspaces', workspaces);
   store.set('activeWorkspaceId', workspace.id);
+  markDirty();
   return workspace;
 });
 
@@ -239,6 +252,7 @@ ipcMain.handle('workspace:update', (event, workspace) => {
     workspaces[index] = workspace;
     store.set('workspaces', workspaces);
   }
+  markDirty();
   return workspace;
 });
 
@@ -249,17 +263,15 @@ ipcMain.handle('workspace:delete', (event, id) => {
   if (store.get('activeWorkspaceId') === id) {
     store.set('activeWorkspaceId', workspaces[0]?.id || null);
   }
+  markDirty();
   return workspaces;
 });
 
 ipcMain.handle('workspace:setActive', (event, id) => {
   store.set('activeWorkspaceId', id);
+  markDirty();
   return id;
 });
-
-// ============================================
-// NOTES
-// ============================================
 
 ipcMain.handle('notes:update', (event, workspaceId, notes) => {
   const workspaces = store.get('workspaces') || [];
@@ -269,6 +281,7 @@ ipcMain.handle('notes:update', (event, workspaceId, notes) => {
     workspace.updatedAt = new Date().toISOString();
     store.set('workspaces', workspaces);
   }
+  markDirty();
   return notes;
 });
 
@@ -288,6 +301,7 @@ ipcMain.handle('profiles:create', (event, name) => {
   const profile = { id: uniqueId, name, createdAt: new Date().toISOString() };
   profiles.push(profile);
   store.set('profiles', profiles);
+  markDirty();
   return profile;
 });
 
@@ -297,6 +311,7 @@ ipcMain.handle('profiles:delete', (event, id) => {
   profiles = profiles.filter(p => p.id !== id);
   store.set('profiles', profiles);
   try { session.fromPartition(`persist:profile-${id}`).clearStorageData(); } catch (e) {}
+  markDirty();
   return profiles;
 });
 
@@ -304,6 +319,7 @@ ipcMain.handle('profiles:rename', (event, id, name) => {
   const profiles = store.get('profiles') || [];
   const profile = profiles.find(p => p.id === id);
   if (profile) { profile.name = name; store.set('profiles', profiles); }
+  markDirty();
   return profiles;
 });
 
@@ -336,11 +352,9 @@ ipcMain.handle('project:exists', async (event, localPath) => {
 
 ipcMain.handle('git:status', async (event, projectPath) => {
   const cwd = resolvePath(projectPath);
-
   if (!fs.existsSync(path.join(cwd, '.git'))) {
     return { success: false, error: 'Not a git repository' };
   }
-
   const result = await runGit(['status', '--porcelain'], { cwd });
   if (result.success) {
     const changes = result.stdout.trim().split('\n').filter(Boolean).map(line => ({
@@ -383,19 +397,6 @@ ipcMain.handle('git:pull', async (event, projectPath) => {
   return { success: false, error: result.stderr || result.error || 'Pull failed' };
 });
 
-// ---- git:clone ----------------------------------------------------
-//
-// Clone a repository into a parent folder. The parent is the workspace's
-// Project Folder if set, otherwise we auto-create ~/Projects.
-//
-// Args: { url, parentPath }
-//   url        — git URL to clone (https or ssh)
-//   parentPath — directory to clone INTO (the repo will become a subfolder)
-//                If null/empty, defaults to ~/Projects (created if missing).
-//
-// Returns: { success, clonedPath, repoName, parentPath, message } on success
-//          { success: false, error } on failure
-//
 ipcMain.handle('git:clone', async (event, args = {}) => {
   const { url, parentPath } = args;
   if (!url || typeof url !== 'string' || !url.trim()) {
@@ -407,13 +408,9 @@ ipcMain.handle('git:clone', async (event, args = {}) => {
     return { success: false, error: 'Could not parse a repository name from that URL' };
   }
 
-  // Resolve the parent directory. If none provided, use ~/Projects.
   let parent = resolvePath(parentPath || '');
-  if (!parent) {
-    parent = path.join(os.homedir(), 'Projects');
-  }
+  if (!parent) parent = path.join(os.homedir(), 'Projects');
 
-  // Create parent if it doesn't exist (recursive so ~/Projects "just works")
   try {
     fs.mkdirSync(parent, { recursive: true });
   } catch (err) {
@@ -429,17 +426,29 @@ ipcMain.handle('git:clone', async (event, args = {}) => {
     };
   }
 
-  // Clone. Using `git clone <url> <repoName>` with cwd=parent so dest is
-  // <parent>/<repoName>. timeout=5min for big repos.
-  const result = await runGit(['clone', url.trim(), repoName], {
+  // If signed in to GitHub via cloud sync AND this looks like a github URL,
+  // inject the token so private repos work without prompting. SSH URLs are
+  // left alone (those use the user's SSH keys).
+  let cloneUrl = url.trim();
+  if (sync && sync.isSignedIn() && /^https?:\/\/(www\.)?github\.com\//i.test(cloneUrl)) {
+    try {
+      const token = await sync.getGithubToken();
+      cloneUrl = injectTokenIntoHttpsUrl(cloneUrl, token);
+    } catch (err) {
+      // Token fetch failed — fall through and try without auth (public repo case).
+      console.warn('[clone] could not fetch GitHub token, attempting unauthenticated clone:', err.message);
+    }
+  }
+
+  const result = await runGit(['clone', cloneUrl, repoName], {
     cwd: parent,
     timeout: 5 * 60 * 1000,
   });
 
   if (!result.success) {
-    // Surface git's actual error so the user can act on it (auth, 404, etc).
-    const errMsg = (result.stderr || result.error || 'git clone failed').trim();
-    return { success: false, error: errMsg };
+    // Scrub any token from the error message before returning to the renderer
+    const safeStderr = (result.stderr || result.error || 'git clone failed').replace(/x-access-token:[^@]+@/g, 'x-access-token:***@');
+    return { success: false, error: safeStderr.trim() };
   }
 
   return {
@@ -449,4 +458,89 @@ ipcMain.handle('git:clone', async (event, args = {}) => {
     parentPath: parent,
     message: `Cloned ${repoName} into ${parent}`,
   };
+});
+
+// ============================================
+// GITHUB API (list user repos)
+// ============================================
+
+ipcMain.handle('github:listRepos', async () => {
+  if (!sync || !sync.isSignedIn()) {
+    return { success: false, error: 'Not signed in to GitHub. Sign in via Cloud Sync first.' };
+  }
+
+  let token;
+  try {
+    token = await sync.getGithubToken();
+  } catch (err) {
+    if (err.message === 'stale_session_resign_in') {
+      return { success: false, error: 'Your session is from before GitHub auth was wired up. Sign out and sign in again.' };
+    }
+    return { success: false, error: `Could not fetch GitHub token: ${err.message}` };
+  }
+
+  // Fetch up to 100 most-recently-updated repos. If user has more than that,
+  // they can search by typing the URL directly.
+  try {
+    const resp = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'perimeter-app',
+      },
+    });
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      return { success: false, error: `GitHub API error (${resp.status}): ${body.substring(0, 200)}` };
+    }
+    const repos = await resp.json();
+    const slim = repos.map(r => ({
+      name: r.name,
+      full_name: r.full_name,
+      description: r.description,
+      private: r.private,
+      fork: r.fork,
+      clone_url: r.clone_url,
+      ssh_url: r.ssh_url,
+      html_url: r.html_url,
+      updated_at: r.updated_at,
+      default_branch: r.default_branch,
+    }));
+    return { success: true, repos: slim };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// ============================================
+// CLOUD SYNC IPC
+// ============================================
+
+ipcMain.handle('sync:getStatus', () => {
+  return sync ? sync.getStatus() : { status: 'signed-out', signedIn: false };
+});
+
+ipcMain.handle('sync:signIn', async () => {
+  if (!sync) return { error: 'sync_not_ready' };
+  return await sync.signIn();
+});
+
+ipcMain.handle('sync:signOut', async () => {
+  if (!sync) return { error: 'sync_not_ready' };
+  return await sync.signOut();
+});
+
+ipcMain.handle('sync:syncNow', async (event, { direction } = {}) => {
+  if (!sync) return { error: 'sync_not_ready' };
+  return await sync.syncNow({ direction });
+});
+
+ipcMain.handle('sync:pushForce', async () => {
+  if (!sync) return { error: 'sync_not_ready' };
+  return await sync.pushToServer({ force: true });
+});
+
+ipcMain.handle('sync:pullForce', async () => {
+  if (!sync) return { error: 'sync_not_ready' };
+  return await sync.pullFromServer();
 });
