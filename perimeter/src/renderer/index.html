@@ -9,18 +9,15 @@
 </head>
 <body>
   <div id="app">
-    <!-- Title Bar -->
     <div id="title-bar">
       <div class="title-bar-drag-region"></div>
       <span class="title-bar-text">Perimeter</span>
     </div>
 
-    <!-- Main Content -->
     <div id="main-content">
       <div id="upper-section">
         <div id="layout-container">
 
-          <!-- LEFT SIDEBAR -->
           <div id="sidebar" class="sidebar-pane">
 
             <div class="sidebar-section">
@@ -51,16 +48,31 @@
               </button>
             </div>
 
+            <!-- Claude Code Section -->
+            <div id="claude-section" class="sidebar-section">
+              <div class="sidebar-section-header">
+                <span class="sidebar-section-title">Claude Code</span>
+                <span id="claude-status-badge" class="status-badge signed-out">Idle</span>
+              </div>
+              <p id="claude-section-hint" class="sync-desc">Open a terminal to launch Claude Code.</p>
+              <button id="claude-launch-btn" class="git-btn launch-btn" disabled>
+                <span class="btn-icon">▶</span>
+                <span class="btn-text">Launch</span>
+              </button>
+              <button id="claude-launch-skip-btn" class="git-btn launch-skip-btn" disabled>
+                <span class="btn-icon">⚡</span>
+                <span class="btn-text">Launch (skip permissions)</span>
+              </button>
+            </div>
+
             <div id="git-section" class="sidebar-section hidden">
               <div class="sidebar-section-header">
                 <span class="sidebar-section-title">Git</span>
                 <span id="git-status-badge" class="status-badge"></span>
               </div>
-
               <div id="git-status-display" class="git-status-display">
                 <span class="git-status-text">Checking...</span>
               </div>
-
               <div class="git-actions">
                 <button id="git-pull-btn" class="git-btn pull-btn">
                   <span class="btn-icon">⬇</span>
@@ -71,11 +83,9 @@
                   <span class="btn-text">Push</span>
                 </button>
               </div>
-
               <div class="commit-section">
                 <input type="text" id="commit-message" placeholder="Commit message (optional)">
               </div>
-
               <button id="git-refresh-btn" class="refresh-btn">
                 <span>↻</span> Refresh Status
               </button>
@@ -116,7 +126,7 @@
             <div class="sidebar-spacer"></div>
           </div>
 
-          <!-- LEFT PANE: Terminal -->
+          <!-- LEFT PANE: Terminal + chat input -->
           <div id="terminal-pane" class="terminal-pane">
             <div class="pane-tab-bar">
               <div class="pane-tab-list" id="terminal-tab-list"></div>
@@ -132,11 +142,20 @@
                 <p>Click + to open a terminal</p>
               </div>
             </div>
+
+            <!-- Chat input row, always visible at the bottom of the terminal pane -->
+            <div id="claude-chat-row">
+              <textarea id="claude-chat-input"
+                rows="1"
+                disabled
+                placeholder="Open a terminal to chat with Claude Code…"></textarea>
+              <button id="claude-chat-stop" class="chat-icon-btn stop" title="Interrupt Claude (Esc)" disabled>⛔</button>
+              <button id="claude-chat-send" class="chat-icon-btn send" title="Send (Enter)" disabled>↵</button>
+            </div>
           </div>
 
           <div id="pane-resizer"></div>
 
-          <!-- RIGHT PANE: Browser -->
           <div id="browser-pane" class="pane">
             <div class="pane-tab-bar">
               <div class="pane-tab-list" data-pane="right"></div>
@@ -175,14 +194,12 @@
         </div>
       </div>
 
-      <!-- Workspace Bar -->
       <div id="workspace-bar">
         <div id="workspace-list"></div>
         <button id="add-workspace" class="workspace-add-btn">+ New Workspace</button>
       </div>
     </div>
 
-    <!-- Empty State Overlay -->
     <div id="empty-state-overlay" class="hidden">
       <div class="empty-icon">⧔</div>
       <h2>Welcome to Perimeter</h2>
@@ -190,7 +207,6 @@
       <button id="empty-create-workspace">Create Workspace</button>
     </div>
 
-    <!-- Workspace Modal -->
     <div id="modal-overlay" class="hidden">
       <div id="modal">
         <h3 id="modal-title">New Workspace</h3>
@@ -202,7 +218,6 @@
       </div>
     </div>
 
-    <!-- Tab Modal (browser) -->
     <div id="tab-modal-overlay" class="hidden">
       <div id="tab-modal">
         <h3>New Tab</h3>
@@ -219,7 +234,6 @@
       </div>
     </div>
 
-    <!-- Profile Modal -->
     <div id="profile-modal-overlay" class="hidden">
       <div id="profile-modal">
         <h3>Manage Session Profiles</h3>
@@ -235,17 +249,13 @@
       </div>
     </div>
 
-    <!-- Clone Repo Modal (with two tabs: My Repos / Paste URL) -->
     <div id="clone-modal-overlay" class="hidden">
       <div id="clone-modal">
         <h3>Clone Repository</h3>
-
         <div class="clone-tabs">
           <button class="clone-tab active" data-clone-tab="my-repos">📂 My Repos</button>
           <button class="clone-tab" data-clone-tab="paste-url">🔗 Paste URL</button>
         </div>
-
-        <!-- My Repos pane -->
         <div id="clone-pane-my-repos" class="clone-pane">
           <div id="clone-signed-out-hint" class="clone-signed-out-hint hidden">
             <p>Sign in with GitHub (in the Cloud Sync sidebar) to browse your repos.</p>
@@ -253,13 +263,10 @@
           <input type="text" id="clone-repo-search" placeholder="Search your repos…" autocomplete="off" spellcheck="false">
           <div id="clone-repo-list" class="clone-repo-list"></div>
         </div>
-
-        <!-- Paste URL pane -->
         <div id="clone-pane-paste-url" class="clone-pane hidden">
           <p class="profile-modal-desc">Paste any Git URL (HTTPS or SSH) for a public repo or one outside your account.</p>
           <input type="text" id="clone-url-input" placeholder="https://github.com/owner/repo.git" autocomplete="off" spellcheck="false">
         </div>
-
         <div id="clone-destination-preview" class="clone-preview">
           <span class="clone-preview-label">Will clone into:</span>
           <span class="clone-preview-path" id="clone-preview-path">—</span>
@@ -273,7 +280,6 @@
     </div>
   </div>
 
-  <!-- xterm.js + addons -->
   <script src="../../node_modules/xterm/lib/xterm.js"></script>
   <script src="../../node_modules/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
   <script src="../../node_modules/xterm-addon-web-links/lib/xterm-addon-web-links.js"></script>
