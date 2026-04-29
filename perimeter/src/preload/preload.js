@@ -28,6 +28,21 @@ contextBridge.exposeInMainWorld('perimeter', {
     pull: (projectPath) => ipcRenderer.invoke('git:pull', projectPath),
     clone: (args) => ipcRenderer.invoke('git:clone', args),
   },
+  github: {
+    // List the signed-in user's repos. Returns an array of
+    //   { name, full_name, description, private, clone_url, ssh_url, updated_at }
+    listRepos: () => ipcRenderer.invoke('github:listRepos'),
+  },
+  sync: {
+    getStatus: () => ipcRenderer.invoke('sync:getStatus'),
+    signIn: () => ipcRenderer.invoke('sync:signIn'),
+    signOut: () => ipcRenderer.invoke('sync:signOut'),
+    syncNow: (opts) => ipcRenderer.invoke('sync:syncNow', opts || {}),
+    pushForce: () => ipcRenderer.invoke('sync:pushForce'),
+    pullForce: () => ipcRenderer.invoke('sync:pullForce'),
+    onStatus: (callback) => ipcRenderer.on('sync:status', (_event, status) => callback(status)),
+    onRemoteApplied: (callback) => ipcRenderer.on('sync:remote-applied', () => callback()),
+  },
   terminal: {
     create: (opts) => ipcRenderer.invoke('terminal:create', opts),
     write: (termId, data) => ipcRenderer.send('terminal:write', { termId, data }),
