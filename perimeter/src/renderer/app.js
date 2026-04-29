@@ -99,7 +99,6 @@ function updateClaudeUI(state) {
   const claudeActive = !!state?.claudeActive;
   const hasFolder = !!(activeWorkspace?.folderPath);
 
-  // Status badge
   if (claudeActive) {
     claudeStatusBadge.className = 'status-badge running';
     claudeStatusBadge.textContent = 'Running';
@@ -108,7 +107,6 @@ function updateClaudeUI(state) {
     claudeStatusBadge.textContent = 'Idle';
   }
 
-  // Hint text under the section title.
   if (!hasFolder) {
     claudeSectionHint.textContent = 'Set or clone a Project Folder first to enable Claude Code.';
   } else if (!hasTerminal) {
@@ -119,8 +117,6 @@ function updateClaudeUI(state) {
     claudeSectionHint.textContent = 'Press ▶ Launch to start Claude Code in the active terminal.';
   }
 
-  // Launch buttons:
-  //   disabled if no folder OR no terminal OR claude already running
   const canLaunch = hasFolder && hasTerminal && !claudeActive;
   claudeLaunchBtn.disabled = !canLaunch;
   claudeLaunchSkipBtn.disabled = !canLaunch;
@@ -131,10 +127,6 @@ function updateClaudeUI(state) {
     : '';
   claudeLaunchSkipBtn.dataset.disabledReason = claudeLaunchBtn.dataset.disabledReason;
 
-  // Chat input + buttons:
-  // Enabled whenever there's a terminal. Whatever you type goes to the
-  // active terminal — if Claude Code is running it gets your message,
-  // if not it goes to the shell. Either way the user is not blocked.
   if (!hasTerminal) {
     claudeChatInput.disabled = true;
     claudeChatInput.placeholder = hasFolder
@@ -144,8 +136,6 @@ function updateClaudeUI(state) {
     claudeChatInput.disabled = false;
     claudeChatInput.placeholder = 'Type to Claude Code…  (Enter sends, Shift+Enter newline)';
   } else {
-    // Terminal is open but Claude isn't detected yet — still let user type.
-    // If they type before launching, it goes to the shell as a normal command.
     claudeChatInput.disabled = false;
     claudeChatInput.placeholder = hasFolder
       ? 'Press ▶ Launch first, or type a shell command…'
@@ -166,15 +156,16 @@ function launchClaudeCode({ skipPermissions = false } = {}) {
   if (!activeWorkspace?.folderPath) return;
   const folder = activeWorkspace.folderPath;
 
+  // Use \r (carriage return) instead of \n. \r is the actual TTY "Enter key".
+  // Claude Code's TUI input handler listens for \r to submit. \n alone leaves
+  // the text typed but unsubmitted.
   const escaped = folder.replace(/"/g, '\\"');
   const cmd = skipPermissions
-    ? `cd "${escaped}" && claude --dangerously-skip-permissions\n`
-    : `cd "${escaped}" && claude\n`;
+    ? `cd "${escaped}" && claude --dangerously-skip-permissions\r`
+    : `cd "${escaped}" && claude\r`;
 
   if (window.PerimeterTerminals) {
     window.PerimeterTerminals.sendToActive(cmd);
-    // Mark this terminal as Claude-Code-active immediately so the UI updates
-    // without waiting for the marker characters to appear in output.
     window.PerimeterTerminals.markActiveAsClaudeCode();
   }
 }
@@ -184,8 +175,15 @@ function sendChatMessage() {
   const text = claudeChatInput.value;
   if (!text.trim()) return;
 
+  // Send the typed text first, then a brief delay, then \r to submit.
+  // The delay gives Claude Code's TUI input handler time to process the
+  // buffered text before the submit signal. Without the delay, fast text
+  // can sometimes race against the carriage return.
   if (window.PerimeterTerminals) {
-    window.PerimeterTerminals.sendToActive(text + '\n');
+    window.PerimeterTerminals.sendToActive(text);
+    setTimeout(() => {
+      window.PerimeterTerminals.sendToActive('\r');
+    }, 30);
   }
 
   claudeChatInput.value = '';
@@ -1335,7 +1333,6 @@ function setupEventListeners() {
   });
   cloneModalOverlay.addEventListener('click', (e) => { if (e.target === cloneModalOverlay && !cloneCancelBtn.disabled) closeCloneModal(); });
 
-  // Claude Code launch buttons — parent click delegation so disabled buttons can still open the clone modal.
   claudeLaunchBtn.parentElement.addEventListener('click', (e) => {
     if (e.target.closest('#claude-launch-btn')) {
       const btn = claudeLaunchBtn;
